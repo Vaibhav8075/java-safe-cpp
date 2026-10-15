@@ -58,6 +58,10 @@ void BytecodeProgram::dump(std::ostream& os) const {
             instructions[i].operand < static_cast<int>(functions.size())) {
             text += "  (" + functions[instructions[i].operand].name + ")";
         }
+        if (instructions[i].op == Opcode::PUSH_CONST && instructions[i].operand >= 0 &&
+            instructions[i].operand < static_cast<int>(constantTable.size())) {
+            text += "  (=" + std::to_string(constantTable[instructions[i].operand]) + ")";
+        }
         os << "  " << std::setw(4) << std::setfill('0') << i << "  " << std::left << std::setw(28)
            << std::setfill(' ') << text << std::right << "; line " << instructions[i].line << "\n";
     }
