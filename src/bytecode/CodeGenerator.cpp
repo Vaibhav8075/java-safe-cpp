@@ -1,124 +1,184 @@
 #include "CodeGenerator.h"
+#include <stdexcept>
 
 namespace jscpp {
+
+// Reference-counting convention used by the generated code:
+//  - Every local pointer or array variable owns one reference to its heap object.
+//  - "new" and calls returning a pointer produce an *owned* temporary (refcount already +1),
+//    so storing them transfers ownership instead of adding another reference.
+//  - Reading a variable produces a *borrowed* value; storing it adds a reference (INC_REF).
+//  - Pointer arguments are handed to the callee as owned references; the callee releases its
+//    parameters when it returns, like any other local.
+//  - Leaving a block, returning, or reassigning a variable releases the old reference (DEC_REF).
+
+namespace {
+// Sets the source line recorded on emitted instructions for the lifetime of the guard
+struct LineGuard {
+    int& line;
+    int saved;
+    LineGuard(int& line, int newLine) : line(line), saved(line) {
+        if (newLine > 0) line = newLine;
+    }
+    ~LineGuard() { line = saved; }
+};
+}
 
 CodeGenerator::CodeGenerator(SemanticAnalyzer& semantic) : semantic(semantic) {}
 
 BytecodeProgram CodeGenerator::generate(Program& program) {
     program.accept(*this);
-
-    // Add halt at the end of global scope (if we support global statements,
-    // though typically they are inside main)
     emit(Opcode::HALT);
 
-    if (prog.functions.find("main") != prog.functions.end()) {
-        prog.mainEntryPoint = prog.functions["main"].entryPoint;
+    int mainIdx = prog.findFunction("main");
+    if (mainIdx >= 0) {
+        prog.mainEntryPoint = prog.functions[mainIdx].entryPoint;
     }
-
+    prog.verify();
     return std::move(prog);
 }
 
 int CodeGenerator::getInstructionOffset() const {
-    return prog.instructions.size();
+    return static_cast<int>(prog.instructions.size());
 }
 
 void CodeGenerator::emit(Opcode op, int operand) {
-    prog.addInstruction(Instruction(op, operand));
+    prog.addInstruction(Instruction(op, operand, currentLine));
+}
+
+void CodeGenerator::emitConst(int value) {
+    emit(Opcode::PUSH_CONST, prog.addConstant(value));
 }
 
 void CodeGenerator::patchOperand(int instructionOffset, int newOperand) {
     prog.instructions[instructionOffset].operand = newOperand;
 }
 
+const CodeGenerator::LocalVar& CodeGenerator::resolve(const std::string& name) const {
+    for (auto scope = scopes.rbegin(); scope != scopes.rend(); ++scope) {
+        for (auto var = scope->rbegin(); var != scope->rend(); ++var) {
+            if (var->name == name) return *var;
+        }
+    }
+    throw std::logic_error("codegen: unresolved variable " + name); // semantic analysis prevents this
+}
+
+int CodeGenerator::defineLocal(const std::string& name, std::shared_ptr<Type> type) {
+    // Every variable in a function gets its own slot, so a slot never holds a stale
+    // value from a different variable
+    int slot = nextSlot++;
+    scopes.back().push_back({name, slot, std::move(type)});
+    return slot;
+}
+
+bool CodeGenerator::isManaged(const std::shared_ptr<Type>& type) {
+    return type && (type->kind == TypeKind::Pointer || type->kind == TypeKind::Array);
+}
+
+bool CodeGenerator::isPointerExpr(Expr& expr) {
+    auto type = semantic.nodeTypes[&expr];
+    return type && (type->kind == TypeKind::Pointer || type->kind == TypeKind::Nullptr_t);
+}
+
+bool CodeGenerator::isOwnedTemp(Expr& expr) {
+    if (dynamic_cast<NewExpr*>(&expr)) return true;
+    if (dynamic_cast<CallExpr*>(&expr)) return isPointerExpr(expr);
+    return false;
+}
+
+void CodeGenerator::emitRelease(const std::vector<LocalVar>& scope, bool clearSlots) {
+    for (auto var = scope.rbegin(); var != scope.rend(); ++var) {
+        if (!isManaged(var->type)) continue;
+        emit(Opcode::LOAD_LOCAL, var->slot);
+        emit(Opcode::DEC_REF);
+        if (clearSlots) {
+            // Null the slot so a loop that re-enters this block never releases a dead object twice
+            emitConst(0);
+            emit(Opcode::STORE_LOCAL, var->slot);
+        }
+    }
+}
+
 void CodeGenerator::visit(IntLiteral& node) {
-    int constIdx = prog.addConstant(node.value);
-    emit(Opcode::PUSH_CONST, constIdx);
+    emitConst(node.value);
 }
 
 void CodeGenerator::visit(BoolLiteral& node) {
-    int constIdx = prog.addConstant(node.value ? 1 : 0);
-    emit(Opcode::PUSH_CONST, constIdx);
+    emitConst(node.value ? 1 : 0);
 }
 
-void CodeGenerator::visit(NullptrLiteral& node) {
-    int constIdx = prog.addConstant(0);
-    emit(Opcode::PUSH_CONST, constIdx);
+void CodeGenerator::visit(NullptrLiteral&) {
+    emitConst(0);
 }
 
 void CodeGenerator::visit(IdentifierExpr& node) {
-    auto symbol = symTable.resolve(node.name);
-    if (!symbol) return; // Should not happen, semantic caught it
+    emit(Opcode::LOAD_LOCAL, resolve(node.name).slot);
+}
 
-    if (isLValue) {
-        emit(Opcode::STORE_LOCAL, symbol->localIndex);
+// The right operand is evaluated first (C++17 sequences it before the left), then stored.
+// The value of the whole assignment expression is left on the stack.
+void CodeGenerator::emitAssign(BinaryExpr& node) {
+    node.right->accept(*this);
+
+    if (auto id = dynamic_cast<IdentifierExpr*>(node.left.get())) {
+        const LocalVar& var = resolve(id->name);
+        if (var.type->kind == TypeKind::Pointer) {
+            if (!isOwnedTemp(*node.right)) emit(Opcode::INC_REF); // retain new value first (safe for p = p)
+            emit(Opcode::LOAD_LOCAL, var.slot);
+            emit(Opcode::DEC_REF);                                // then release the old one
+        }
+        emit(Opcode::STORE_LOCAL, var.slot);
+        emit(Opcode::LOAD_LOCAL, var.slot);
+    } else if (auto arr = dynamic_cast<ArrayAccessExpr*>(node.left.get())) {
+        LineGuard at(currentLine, arr->loc.line);
+        emit(Opcode::LOAD_LOCAL, resolve(arr->arrayName).slot);
+        arr->index->accept(*this);
+        emit(Opcode::CHECK_BOUNDS);
+        emit(Opcode::STORE_ARRAY_INV); // pops index, array, value; pushes value
+    } else if (auto deref = dynamic_cast<DerefExpr*>(node.left.get())) {
+        LineGuard at(currentLine, deref->loc.line);
+        deref->expr->accept(*this);
+        emit(Opcode::CHECK_NULL);
+        emit(Opcode::STORE_POINTER); // pops pointer, value; pushes value
     } else {
-        emit(Opcode::LOAD_LOCAL, symbol->localIndex);
+        throw std::logic_error("codegen: invalid assignment target"); // semantic analysis prevents this
     }
 }
 
 void CodeGenerator::visit(BinaryExpr& node) {
+    LineGuard at(currentLine, node.loc.line);
+
     if (node.op.type == TokenType::ASSIGN) {
-        node.right->accept(*this);
-
-        // Handling pointers assignment for reference counting
-        auto leftType = semantic.nodeTypes[node.left.get()];
-        if (leftType && leftType->kind == TypeKind::Pointer) {
-            // Right is evaluated, on stack.
-            // We need to INC_REF the new value, DEC_REF the old value, then STORE.
-            // But doing this correctly in bytecode might require specific instructions.
-            // For simplicity:
-            // STACK: [new_val]
-
-            // Check if LHS is simple local variable
-            auto idExpr = dynamic_cast<IdentifierExpr*>(node.left.get());
-            if (idExpr) {
-                auto sym = symTable.resolve(idExpr->name);
-                if (sym) {
-                    emit(Opcode::INC_REF); // inc_ref new_val
-                    emit(Opcode::LOAD_LOCAL, sym->localIndex);
-                    emit(Opcode::DEC_REF); // dec_ref old_val
-                }
-            } else {
-                // E.g. array assignment or pointer deref assignment
-                // STACK: [new_val]
-                // For *p = new_val, we shouldn't change refcount of *p itself,
-                // wait, if we assign to *p, and *p is a pointer...
-                // Let's assume pointers to pointers are not fully supported or handled similarly.
-            }
-        }
-
-        isLValue = true;
-        node.left->accept(*this); // Will emit STORE_...
-        isLValue = false;
-
-        // Assignment expression returns its RHS value, but we just consumed it...
-        // For C-like behavior, we should leave it on stack, but typical AST in our subset
-        // evaluates statements. If it's used in expr, we need it.
-        // For simplicity, we just reload it if it's an IdentifierExpr.
-        auto idExpr = dynamic_cast<IdentifierExpr*>(node.left.get());
-        if (idExpr) {
-            auto sym = symTable.resolve(idExpr->name);
-            if (sym) {
-                emit(Opcode::LOAD_LOCAL, sym->localIndex);
-            }
-        }
+        emitAssign(node);
         return;
     }
 
-    if (node.op.type == TokenType::AND || node.op.type == TokenType::OR) {
-        // Short circuit evaluation
+    if (node.op.type == TokenType::AND) {
+        // left && right: skip right when left is false
         node.left->accept(*this);
+        int jumpToFalse = getInstructionOffset();
+        emit(Opcode::JUMP_IF_FALSE, 0);
+        node.right->accept(*this);
+        int jumpToEnd = getInstructionOffset();
+        emit(Opcode::JUMP, 0);
+        patchOperand(jumpToFalse, getInstructionOffset());
+        emitConst(0);
+        patchOperand(jumpToEnd, getInstructionOffset());
+        return;
+    }
 
-        int shortCircuitJump = getInstructionOffset();
-        emit(node.op.type == TokenType::AND ? Opcode::JUMP_IF_FALSE : Opcode::JUMP); // jump if false for AND
-
-        if (node.op.type == TokenType::OR) {
-            // For OR, if left is true, we jump to end (short circuit), need to keep true on stack
-            // If false, pop and eval right
-            // Our JUMP_IF_FALSE pops, JUMP doesn't pop conditionally.
-            // Simplified: evaluate both for now to keep VM simple, or add proper short circuit opcodes.
-            // Let's just evaluate both for our basic compiler
-        }
+    if (node.op.type == TokenType::OR) {
+        // left || right: skip right when left is true
+        node.left->accept(*this);
+        int jumpToRight = getInstructionOffset();
+        emit(Opcode::JUMP_IF_FALSE, 0);
+        emitConst(1);
+        int jumpToEnd = getInstructionOffset();
+        emit(Opcode::JUMP, 0);
+        patchOperand(jumpToRight, getInstructionOffset());
+        node.right->accept(*this);
+        patchOperand(jumpToEnd, getInstructionOffset());
+        return;
     }
 
     node.left->accept(*this);
@@ -136,17 +196,14 @@ void CodeGenerator::visit(BinaryExpr& node) {
         case TokenType::GT: emit(Opcode::GT); break;
         case TokenType::LTE: emit(Opcode::LE); break;
         case TokenType::GTE: emit(Opcode::GE); break;
-        case TokenType::AND: emit(Opcode::AND); break;
-        case TokenType::OR: emit(Opcode::OR); break;
-        default: break;
+        default: throw std::logic_error("codegen: unknown binary operator " + node.op.lexeme);
     }
 }
 
 void CodeGenerator::visit(UnaryExpr& node) {
     node.expr->accept(*this);
     if (node.op.type == TokenType::MINUS) {
-        int constIdx = prog.addConstant(-1);
-        emit(Opcode::PUSH_CONST, constIdx);
+        emitConst(-1);
         emit(Opcode::MUL);
     } else if (node.op.type == TokenType::NOT) {
         emit(Opcode::NOT);
@@ -154,188 +211,103 @@ void CodeGenerator::visit(UnaryExpr& node) {
 }
 
 void CodeGenerator::visit(CallExpr& node) {
+    LineGuard at(currentLine, node.loc.line);
+
     if (node.callee == "print") {
         node.args[0]->accept(*this);
         emit(Opcode::PRINT);
-        // Print returns void, but expressions might expect something. Push 0 just in case.
-        int constIdx = prog.addConstant(0);
-        emit(Opcode::PUSH_CONST, constIdx);
+        emitConst(0); // every call leaves one value; ExprStmt pops it
         return;
     }
 
-    for (auto& arg : node.args) {
-        arg->accept(*this);
+    const auto& paramTypes = semantic.functions.at(node.callee)->paramTypes;
+    for (size_t i = 0; i < node.args.size(); ++i) {
+        node.args[i]->accept(*this);
+        if (paramTypes[i]->kind == TypeKind::Pointer && !isOwnedTemp(*node.args[i])) {
+            emit(Opcode::INC_REF); // the callee's parameter becomes a new owner
+        }
     }
-
-    int funcIdx = prog.addConstant(0); // Placeholder for func entry point
-    // We can use a string map for call resolution in VM, or resolve index now.
-    // For simplicity, let VM resolve by storing an index to the constant table containing a hash,
-    // or just let VM's CALL instruction take string hash.
-    // Let's use string hash for CALL operand.
-    std::hash<std::string> hasher;
-    int hash = hasher(node.callee) & 0x7FFFFFFF;
-    emit(Opcode::CALL, hash);
+    emit(Opcode::CALL, functionIndex.at(node.callee));
 }
 
 void CodeGenerator::visit(ArrayAccessExpr& node) {
-    auto symbol = symTable.resolve(node.arrayName);
-
-    if (isLValue) {
-        // STORE_ARRAY expects: array_ptr, index, value
-        // The value is already evaluated and pushed by the Assign binary expr before this
-        // So we need to put array_ptr and index under the value.
-        // This is tricky with a simple stack machine.
-        // Better: let ArrayAccess generate differently when it's an LValue.
-        // Actually, our BinaryExpr assignment does `isLValue = true; node.left->accept();`.
-        // So here STACK: [value]. We need: [value, array_ptr, index] then some opcode...
-        // Wait, typical store array: STACK: [array_ptr, index, value], then STORE_ARRAY.
-        // In BinaryExpr: node.right->accept() (pushes value).
-        // If we emit LOAD_LOCAL(array), eval index, then we have [value, array_ptr, index].
-        // We'd need a SWAP.
-        // Let's change how assignment works if left is array/deref in BinaryExpr, OR
-        // just add a specific instruction or handle it explicitly.
-
-        // Easiest fix: When ArrayAccess is visited as LValue, we just emit LOAD_LOCAL array and index.
-        // The stack will be [value, array_ptr, index].
-        // We can add a STORE_ARRAY_INV instruction, or just fix BinaryExpr.
-        // Let's assume BinaryExpr does:
-        // if LHS is ArrayAccess:
-        //   node.left->arrayName -> LOAD_LOCAL
-        //   node.left->index->accept
-        //   node.right->accept
-        //   STORE_ARRAY
-        // But for clean ASTVisitor, let's keep it here. We will just use standard order:
-        // Wait, in BinaryExpr for assignment:
-        // we pushed value. So stack is [value].
-        emit(Opcode::LOAD_LOCAL, symbol->localIndex);
-        bool oldLval = isLValue;
-        isLValue = false;
-        node.index->accept(*this);
-        isLValue = oldLval;
-        // Stack: [value, array_ref, index].
-        // We need STORE_ARRAY that takes (value, array_ref, index)
-        // Actually we can just define STORE_ARRAY to pop (index), pop (array_ref), pop (value).
-        // Let's use this semantics!
-        emit(Opcode::CHECK_BOUNDS);
-        emit(Opcode::STORE_ARRAY_INV);
-    } else {
-        emit(Opcode::LOAD_LOCAL, symbol->localIndex);
-        node.index->accept(*this);
-        emit(Opcode::CHECK_BOUNDS);
-        emit(Opcode::LOAD_ARRAY);
-    }
+    LineGuard at(currentLine, node.loc.line);
+    emit(Opcode::LOAD_LOCAL, resolve(node.arrayName).slot);
+    node.index->accept(*this);
+    emit(Opcode::CHECK_BOUNDS);
+    emit(Opcode::LOAD_ARRAY);
 }
 
 void CodeGenerator::visit(NewExpr& node) {
-    auto type = semantic.nodeTypes[&node];
-    // We only support simple new (e.g. `new int`).
-    // ALLOC takes size. For simplicity, ALLOC 1 for single items.
-    emit(Opcode::ALLOC, 1);
-    // Resulting pointer is on stack.
+    LineGuard at(currentLine, node.loc.line);
+    emit(Opcode::ALLOC, 1); // new object starts with refcount 1, owned by this expression
 }
 
 void CodeGenerator::visit(DerefExpr& node) {
-    if (isLValue) {
-        // Stack: [value]
-        bool oldLval = isLValue;
-        isLValue = false;
-        node.expr->accept(*this); // evaluate pointer
-        isLValue = oldLval;
-        // Stack: [value, ptr]
-        emit(Opcode::CHECK_NULL);
-        emit(Opcode::STORE_POINTER); // pops ptr, pops value
-    } else {
-        node.expr->accept(*this);
-        emit(Opcode::CHECK_NULL);
-        emit(Opcode::LOAD_POINTER);
-    }
+    LineGuard at(currentLine, node.loc.line);
+    node.expr->accept(*this);
+    emit(Opcode::CHECK_NULL);
+    emit(Opcode::LOAD_POINTER);
 }
 
 void CodeGenerator::visit(BlockStmt& node) {
-    symTable.enterScope();
+    scopes.emplace_back();
     for (auto& stmt : node.statements) {
         stmt->accept(*this);
     }
-
-    // Automatically DEC_REF any local pointer variables going out of scope
-    auto& scope = symTable.symbolsInCurrentScope(); // Helper needed
-    for (auto& [name, sym] : scope) {
-        if (sym->type->kind == TypeKind::Pointer && sym->localIndex != -1) {
-            emit(Opcode::LOAD_LOCAL, sym->localIndex);
-            emit(Opcode::DEC_REF);
-        }
-    }
-
-    symTable.leaveScope();
+    LineGuard at(currentLine, node.loc.line);
+    emitRelease(scopes.back(), true);
+    scopes.pop_back();
 }
 
 void CodeGenerator::visit(ExprStmt& node) {
+    LineGuard at(currentLine, node.loc.line);
     node.expr->accept(*this);
-    emit(Opcode::POP);
-}
-
-void CodeGenerator::visit(VarDeclStmt& node) {
-    auto symbol = std::make_shared<Symbol>();
-    symbol->name = node.name;
-    symbol->kind = SymbolKind::Variable;
-    symbol->type = semantic.nodeTypes.count(&node) ? semantic.nodeTypes[&node] : semantic.nodeTypes[&node]; // Actually we need type, but we can reconstruct it
-    // Wait, SemanticAnalyzer didn't store VarDeclStmt's type in nodeTypes!
-    // But we can get it by resolving from semantic.symTable? No, that's private.
-    // Let's just convert it.
-
-    // Better: let's reconstruct the type. But we don't have convertTypeAST in CodeGenerator.
-    // Actually, we can just use node.type.isArray and node.type.isPointer for CodeGen.
-
-    // For now, let's just make a dummy type object with the right kind
-    symbol->type = std::make_shared<Type>(TypeKind::Unknown);
-    if (node.type.isArray) symbol->type = std::make_shared<Type>(TypeKind::Array, nullptr, node.type.arraySize);
-    else if (node.type.isPointer) symbol->type = std::make_shared<Type>(TypeKind::Pointer);
-    else if (node.type.name == "int") symbol->type = std::make_shared<Type>(TypeKind::Int);
-    else if (node.type.name == "bool") symbol->type = std::make_shared<Type>(TypeKind::Bool);
-
-    symTable.define(symbol);
-
-    if (node.initializer) {
-        node.initializer->accept(*this);
-
-        if (symbol->type->kind == TypeKind::Pointer) {
-            emit(Opcode::INC_REF);
-        }
-        emit(Opcode::STORE_LOCAL, symbol->localIndex);
+    if (isOwnedTemp(*node.expr)) {
+        emit(Opcode::DEC_REF); // e.g. "new int;" or "makePtr();" - nobody keeps the result
     } else {
-        // Default init
-        if (symbol->type->kind == TypeKind::Pointer || symbol->type->kind == TypeKind::Array) {
-            int constIdx = prog.addConstant(0);
-            emit(Opcode::PUSH_CONST, constIdx); // null
-            emit(Opcode::STORE_LOCAL, symbol->localIndex);
-        } else if (symbol->type->kind == TypeKind::Int || symbol->type->kind == TypeKind::Bool) {
-            int constIdx = prog.addConstant(0);
-            emit(Opcode::PUSH_CONST, constIdx);
-            emit(Opcode::STORE_LOCAL, symbol->localIndex);
-        }
-
-        // If Array: int arr[5];
-        if (symbol->type->kind == TypeKind::Array) {
-            emit(Opcode::ALLOC, symbol->type->arraySize);
-            emit(Opcode::STORE_LOCAL, symbol->localIndex);
-        }
+        emit(Opcode::POP);
     }
 }
 
+void CodeGenerator::visit(VarDeclStmt& node) {
+    LineGuard at(currentLine, node.loc.line);
+    auto type = semantic.nodeTypes.at(&node);
+
+    // Evaluate the initializer before the name is in scope ("int x = x;" sees the outer x)
+    if (type->kind == TypeKind::Array) {
+        emit(Opcode::ALLOC, type->arraySize);
+    } else if (node.initializer) {
+        node.initializer->accept(*this);
+        if (type->kind == TypeKind::Pointer && !isOwnedTemp(*node.initializer)) {
+            emit(Opcode::INC_REF);
+        }
+    } else {
+        emitConst(0); // ints, bools and pointers start as 0 / false / nullptr
+    }
+
+    int slot = defineLocal(node.name, type);
+    if (isManaged(type)) {
+        // Release whatever the slot held, in case this declaration runs again inside a loop
+        emit(Opcode::LOAD_LOCAL, slot);
+        emit(Opcode::DEC_REF);
+    }
+    emit(Opcode::STORE_LOCAL, slot);
+}
+
 void CodeGenerator::visit(IfStmt& node) {
+    LineGuard at(currentLine, node.loc.line);
     node.condition->accept(*this);
 
     int jumpIfFalseOffset = getInstructionOffset();
-    emit(Opcode::JUMP_IF_FALSE, 0); // Placeholder
+    emit(Opcode::JUMP_IF_FALSE, 0);
 
     node.thenBranch->accept(*this);
 
     if (node.elseBranch) {
         int jumpEndOffset = getInstructionOffset();
-        emit(Opcode::JUMP, 0); // Placeholder
-
+        emit(Opcode::JUMP, 0);
         patchOperand(jumpIfFalseOffset, getInstructionOffset());
-
         node.elseBranch->accept(*this);
         patchOperand(jumpEndOffset, getInstructionOffset());
     } else {
@@ -344,6 +316,7 @@ void CodeGenerator::visit(IfStmt& node) {
 }
 
 void CodeGenerator::visit(WhileStmt& node) {
+    LineGuard at(currentLine, node.loc.line);
     int startOffset = getInstructionOffset();
 
     node.condition->accept(*this);
@@ -354,72 +327,80 @@ void CodeGenerator::visit(WhileStmt& node) {
     node.body->accept(*this);
 
     emit(Opcode::JUMP, startOffset);
-
     patchOperand(jumpIfFalseOffset, getInstructionOffset());
 }
 
 void CodeGenerator::visit(ReturnStmt& node) {
+    LineGuard at(currentLine, node.loc.line);
     if (node.value) {
         node.value->accept(*this);
+        if (currentReturnType->kind == TypeKind::Pointer && !isOwnedTemp(*node.value)) {
+            emit(Opcode::INC_REF); // keep the object alive for the caller after locals are released
+        }
     } else {
-        int constIdx = prog.addConstant(0);
-        emit(Opcode::PUSH_CONST, constIdx);
+        emitConst(0);
+    }
+    // Release every local of the function that is in scope at this point
+    for (auto scope = scopes.rbegin(); scope != scopes.rend(); ++scope) {
+        emitRelease(*scope, false);
     }
     emit(Opcode::RETURN);
 }
 
 void CodeGenerator::visit(DeleteStmt& node) {
-    // We use ARC, delete is not strictly needed, but if provided,
-    // it could manually DEC_REF or force deallocation.
-    // For this subset, we'll make delete a DEC_REF.
-    node.pointer->accept(*this);
+    LineGuard at(currentLine, node.loc.line);
+    // With ARC, delete just gives up this variable's reference and sets it to nullptr,
+    // so it can never leave a dangling pointer behind
+    int slot = resolve(static_cast<IdentifierExpr&>(*node.pointer).name).slot;
+    emit(Opcode::LOAD_LOCAL, slot);
     emit(Opcode::DEC_REF);
+    emitConst(0);
+    emit(Opcode::STORE_LOCAL, slot);
 }
 
 void CodeGenerator::visit(FunctionDecl& node) {
-    symTable.enterScope();
+    LineGuard at(currentLine, node.loc.line);
+    auto signature = semantic.functions.at(node.name);
+    currentReturnType = signature->type;
+
+    scopes.clear();
+    scopes.emplace_back();
+    nextSlot = 0;
 
     int entryPoint = getInstructionOffset();
 
-    // Define params in scope
-    for (const auto& param : node.params) {
-        auto symbol = std::make_shared<Symbol>();
-        symbol->name = param.name;
-        symbol->kind = SymbolKind::Variable;
-
-        symbol->type = std::make_shared<Type>(TypeKind::Unknown);
-        if (param.type.isArray) symbol->type = std::make_shared<Type>(TypeKind::Array, nullptr, param.type.arraySize);
-        else if (param.type.isPointer) symbol->type = std::make_shared<Type>(TypeKind::Pointer);
-
-        symTable.define(symbol);
+    // Arguments are copied into slots 0..n-1 by CALL
+    for (size_t i = 0; i < node.params.size(); ++i) {
+        defineLocal(node.params[i].name, signature->paramTypes[i]);
     }
 
     for (auto& stmt : node.body->statements) {
         stmt->accept(*this);
     }
 
-    // Default return
-    int constIdx = prog.addConstant(0);
-    emit(Opcode::PUSH_CONST, constIdx);
+    // Implicit return at the end (void functions, and main which returns 0)
+    emitRelease(scopes.back(), false);
+    emitConst(0);
     emit(Opcode::RETURN);
 
-    FunctionMeta meta;
-    meta.name = node.name;
+    FunctionMeta& meta = prog.functions[functionIndex.at(node.name)];
     meta.entryPoint = entryPoint;
-    meta.numLocals = symTable.getNextLocalIndex();
-    meta.numArgs = node.params.size();
+    meta.numLocals = nextSlot;
+    meta.numArgs = static_cast<int>(node.params.size());
 
-    prog.functions[node.name] = meta;
-
-    // Register function in VM call table by hash
-    std::hash<std::string> hasher;
-    int hash = hasher(node.name) & 0x7FFFFFFF;
-    // We store the hash in the constant table, though VM will use `functions` map
-
-    symTable.leaveScope();
+    scopes.clear();
 }
 
 void CodeGenerator::visit(Program& node) {
+    // Give every function its table index up front so calls can be emitted before the callee
+    for (auto& decl : node.declarations) {
+        if (auto func = dynamic_cast<FunctionDecl*>(decl.get())) {
+            functionIndex[func->name] = static_cast<int>(prog.functions.size());
+            FunctionMeta meta;
+            meta.name = func->name;
+            prog.functions.push_back(meta);
+        }
+    }
     for (auto& decl : node.declarations) {
         decl->accept(*this);
     }

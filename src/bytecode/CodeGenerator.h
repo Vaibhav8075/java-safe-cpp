@@ -2,8 +2,9 @@
 
 #include "parser/AST.h"
 #include "bytecode/Bytecode.h"
-#include "semantic/SymbolTable.h"
 #include "semantic/SemanticAnalyzer.h"
+#include <unordered_map>
+#include <vector>
 
 namespace jscpp {
 
@@ -35,15 +36,36 @@ public:
     void visit(Program& node) override;
 
 private:
+    struct LocalVar {
+        std::string name;
+        int slot;
+        std::shared_ptr<Type> type;
+    };
+
     SemanticAnalyzer& semantic;
     BytecodeProgram prog;
-    SymbolTable symTable; // Need this for local variable indexing during codegen
+
+    // Local-variable slots of the function being generated; params take slots 0..n-1
+    std::vector<std::vector<LocalVar>> scopes;
+    int nextSlot = 0;
+    std::shared_ptr<Type> currentReturnType;
+    std::unordered_map<std::string, int> functionIndex;
+    int currentLine = 0;
 
     int getInstructionOffset() const;
     void emit(Opcode op, int operand = 0);
+    void emitConst(int value);
     void patchOperand(int instructionOffset, int newOperand);
 
-    bool isLValue = false; // Flag to indicate if we're evaluating an l-value
+    const LocalVar& resolve(const std::string& name) const;
+    int defineLocal(const std::string& name, std::shared_ptr<Type> type);
+
+    // ARC helpers
+    static bool isManaged(const std::shared_ptr<Type>& type);
+    bool isPointerExpr(Expr& expr);
+    bool isOwnedTemp(Expr& expr);
+    void emitRelease(const std::vector<LocalVar>& scope, bool clearSlots);
+    void emitAssign(BinaryExpr& node);
 };
 
 } // namespace jscpp
