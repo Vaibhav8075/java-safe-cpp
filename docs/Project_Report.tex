@@ -7,6 +7,7 @@
 \usepackage{hyperref}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{amsmath}
 
 \geometry{top=1in, bottom=1in, left=1in, right=1in}
 
@@ -68,13 +69,13 @@ The compiler supports a minimal but Turing-complete subset of C++:
 \begin{itemize}
     \item \textbf{Types:} \texttt{int}, \texttt{bool}, \texttt{void}, Pointers (\texttt{T*}), and 1D Arrays (\texttt{T[N]}).
     \item \textbf{Control Flow:} \texttt{if / else}, \texttt{while}, \texttt{for}, \texttt{return}.
-    \item \textbf{Expressions:} Standard arithmetic (\texttt{+}, \texttt{-}, \texttt{*}, \texttt{/}, \texttt{\%}), relational (\texttt{==}, \texttt{<}, \texttt{>=}, etc.), and logical (\texttt{\&\&}, \texttt{||}, \texttt{!}) operations.
-    \item \textbf{Memory:} Dynamic allocation via \texttt{new T}, pointer dereferencing (\texttt{*p}), array indexing (\texttt{arr[i]}).
-    \item \textbf{Functions:} User-defined functions with parameters, plus a built-in \texttt{print()} function.
+    \item \textbf{Expressions:} Arithmetic (\texttt{+}, \texttt{-}, \texttt{*}, \texttt{/}, \texttt{\%}) with 32-bit wrap-around, relational (\texttt{==}, \texttt{<}, \texttt{>=}, etc.), short-circuit logical operators (\texttt{\&\&}, \texttt{||}, \texttt{!}), compound assignment (\texttt{+=}, \texttt{-=}, \ldots) and \texttt{++}/\texttt{--}.
+    \item \textbf{Memory:} Dynamic allocation via \texttt{new int} / \texttt{new bool}, pointer dereferencing (\texttt{*p}), array indexing (\texttt{arr[i]}), and \texttt{delete}.
+    \item \textbf{Functions:} User-defined functions with parameters, defined in any order and possibly recursive, plus a built-in \texttt{print()} function.
 \end{itemize}
 
 \subsection{Unsupported Features}
-To keep the project focused on safety mechanisms, we explicitly reject features like templates, classes/structs, standard library (STL) headers, preprocessor macros, and multiple inheritance.
+To keep the project focused on safety mechanisms, we explicitly reject features like templates, classes/structs, standard library (STL) headers, preprocessor macros, and multiple inheritance. Constructs that could create an unsafe pointer are also rejected at compile time, each with its own error message: the address-of operator \texttt{\&}, pointer arithmetic, pointers to pointers, arrays of pointers, global variables, whole-array assignment, and non-void functions that can end without returning a value.
 
 \section{Compiler Pipeline Architecture}
 The compiler is divided into five distinct stages:
@@ -86,13 +87,13 @@ Converts the raw source code string into a sequence of \texttt{Token} objects. I
 A handcrafted recursive-descent parser that consumes tokens and builds a custom Abstract Syntax Tree (AST). It properly enforces operator precedence (e.g., \texttt{a + b * c} parses as \texttt{a + (b * c)}).
 
 \subsection{3. Semantic Analyzer}
-Implemented as an AST Visitor, this phase maintains lexical scopes and symbol tables. It performs rigorous static type-checking (e.g., ensuring a \texttt{bool} is not assigned to an \texttt{int*}). Any violations result in an immediate compile-time \texttt{SemanticError}.
+Implemented as an AST Visitor, this phase maintains lexical scopes and symbol tables. It runs in two passes: the first records the signature of every function (so functions may call each other in any order), and the second type-checks every body. It checks that the left side of an assignment is a real storage location and that every path of a non-void function returns. Any violation results in a compile-time \texttt{SemanticError}, printed with the offending source line and a caret.
 
 \subsection{4. Code Generator}
 Lowers the AST into our custom bytecode. Crucially, this is where memory safety is enforced. The generator automatically injects instructions like \texttt{CHECK\_NULL}, \texttt{CHECK\_BOUNDS}, \texttt{INC\_REF}, and \texttt{DEC\_REF} around memory access and pointer assignments.
 
 \subsection{5. Virtual Machine}
-A deterministically evaluated, stack-based runtime engine. The VM maintains an operand stack, a call stack for function frames, local variables, and a managed heap.
+A deterministically evaluated, stack-based runtime engine. The VM maintains an operand stack, a call stack for function frames, local variables, and a managed heap. Every stack, local-variable and heap access is range-checked, and a runtime exception reports the source line and function and makes \texttt{jscpp} exit with status 1.
 
 \section{Memory Safety Mechanisms}
 The core achievement of \textbf{jscpp} is genuine safety injection. The compiler protects the program using three primary runtime guards:
@@ -104,10 +105,16 @@ Before any pointer dereference (\texttt{*p}), the compiler emits a \texttt{CHECK
 When accessing arrays (\texttt{arr[i]}), the compiler pushes the array pointer and the index, then emits \texttt{CHECK\_BOUNDS}. The VM's managed heap stores the allocated size of every object. If $i < 0$ or $i \ge \text{size}$, an \texttt{ArrayIndexOutOfBoundsException} is thrown.
 
 \subsection{Automatic Reference Counting (ARC)}
-All \texttt{new} allocations are tracked on the VM's Managed Heap. The code generator emits \texttt{INC\_REF} whenever a pointer is stored in a variable. At the end of every lexical block (\texttt{\{\}}), the compiler automatically injects \texttt{DEC\_REF} for all local pointers going out of scope. When a reference count reaches zero, the memory is reclaimed.
+All \texttt{new} allocations and arrays live on the VM's managed heap with a reference count. Every local pointer or array variable owns one reference. Values produced by \texttt{new} or by a function returning a pointer are \emph{owned} (already counted), so storing them transfers the reference; values read from a variable are \emph{borrowed}, so storing them emits \texttt{INC\_REF}. The compiler emits \texttt{DEC\_REF} when a variable is reassigned, at the end of every block, and on every \texttt{return}. Pointer arguments become owned by the callee, which releases them on return. When a count reaches zero the object is freed immediately. Running with \texttt{--stats} prints the number of allocations and frees; for every example that finishes normally, no objects are alive at exit.
+
+\subsection{Safe \texttt{delete}}
+\texttt{delete p} releases \texttt{p}'s reference and sets \texttt{p} to \texttt{nullptr}. Another variable that refers to the same object keeps it alive, so \texttt{delete} can never create a dangling pointer or a double free.
+
+\subsection{Defined Integer Arithmetic}
+Signed overflow is undefined behaviour in C++. The VM therefore computes \texttt{+}, \texttt{-} and \texttt{*} on unsigned 32-bit values and converts back, so results wrap exactly like Java's \texttt{int}. \texttt{INT\_MIN / -1} and division by zero are handled explicitly.
 
 \section{Bytecode Format}
-The compiled bytecode can be executed in memory or serialized to a binary \texttt{.jbc} file. The instruction set includes operations such as:
+The compiled bytecode can be executed in memory or serialized to a binary \texttt{.jbc} file. The file stores every integer in little-endian order, \texttt{CALL} refers to functions by their index in a function table, and each instruction carries its source line. A loaded file is verified (opcodes, constant and function indices, jump targets, allocation sizes) before it runs, and a file compiled on Windows runs unchanged on Linux. The instruction set includes operations such as:
 \begin{itemize}
     \item \texttt{PUSH\_CONST}, \texttt{LOAD\_LOCAL}, \texttt{STORE\_LOCAL}
     \item Arithmetic \& Logical operators (\texttt{ADD}, \texttt{MUL}, \texttt{AND}, \texttt{EQ}, etc.)
@@ -133,13 +140,19 @@ The compiled \texttt{jscpp} executable provides several commands:
 # Run a program directly from source
 ./jscpp run examples/arrays.cppsafe
 
-# View VM execution trace step-by-step
+# Run and print heap allocation / free counts
+./jscpp run examples/ownership.cppsafe --stats
+
+# View VM execution trace with the operand stack
 ./jscpp run examples/pointers.cppsafe --trace
 
-# Compile to binary bytecode
-./jscpp compile examples/hello.cppsafe -o hello.jbc
+# Show the output of the lexer and the parser
+./jscpp tokens examples/hello.cppsafe
+./jscpp ast examples/refcount.cppsafe
 
-# Dump human-readable bytecode metadata
+# Compile to binary bytecode, run it, and dump it
+./jscpp compile examples/hello.cppsafe -o hello.jbc
+./jscpp run hello.jbc
 ./jscpp dump hello.jbc
 \end{lstlisting}
 
@@ -160,6 +173,7 @@ void main() {
 10
 Runtime Error:
 ArrayIndexOutOfBoundsException: index 5, length 3
+    at line 7 in main() (instruction 20)
 \end{lstlisting}
 
 \subsection{Null Pointer Safety}
@@ -174,10 +188,25 @@ void main() {
 \begin{lstlisting}
 Runtime Error:
 NullPointerException: attempted to dereference a null pointer
+    at line 5 in main() (instruction 6)
 \end{lstlisting}
 
+\section{Faults Found and Fixed}
+The first working version was audited by building it and running small probe programs. The most serious faults were:
+\begin{itemize}
+    \item \texttt{\&\&} and \texttt{||} emitted a jump to address 0 that was never patched, so any condition using them looped forever.
+    \item Parameters were numbered after the locals of earlier functions, so a call stored its arguments in the wrong slots (a program that should print 42 printed 0).
+    \item Variables declared at function level were never released, so reference counting freed nothing; arrays were never released either.
+    \item Functions could not be called before their definition, any expression was accepted on the left of \texttt{=}, and global variables compiled but read the wrong memory.
+    \item Signed overflow in the VM was undefined behaviour in the host C++, runtime errors exited with status 0, \texttt{CALL} relied on \texttt{std::hash} (not portable), and loaded bytecode was not checked.
+\end{itemize}
+The full list of twenty faults, how each was confirmed, and the fix plan are in \texttt{docs/audit-and-plan.md}.
+
+\section{Testing}
+The project has an automated test suite driven by CTest (\texttt{ctest --test-dir build}). Every program in \texttt{examples/} is run and its exact output, including the heap statistics line, is compared with a stored expected result; for the programs that demonstrate a runtime exception, the exception text and source line are also checked. Each example is run twice: from source, and after being saved to and loaded from a \texttt{.jbc} file. Another 28 small programs must each be rejected with a specific compile error. All 60 tests pass on Windows (MinGW g++ 15.2) and on Linux (Ubuntu under WSL, g++ 15.2), and the build produces no warnings with \texttt{-Wall -Wextra -Wpedantic}.
+
 \section{Conclusion and Limitations}
-This project successfully demonstrates the integration of modern memory safety features into a legacy systems syntax. By tightly coupling a custom compiler pipeline with a strict managed runtime, we achieve a memory-safe environment that prevents undefined behavior for our specific language subset.
+This project demonstrates how memory safety features can be built into a compiler for C++-style syntax. By tightly coupling a custom compiler pipeline with a strict managed runtime, we achieve a memory-safe environment that prevents undefined behavior for our specific language subset.
 
 \textbf{Disclaimer on Portability and Scope:} It is important to emphasize that this project does \emph{not} claim to make C++ "Write Once, Run Anywhere" (WORA). The portability and safety guarantees apply strictly to the minimal academic subset of C++ implemented by our custom VM. Real-world C++ constructs such as templates, classes/structs, STL, preprocessor macros, and multiple inheritance are explicitly excluded from this compiler.
 
