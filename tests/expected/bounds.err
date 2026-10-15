@@ -1,0 +1,2 @@
+ArrayIndexOutOfBoundsException: index 5, length 3
+    at line 7 in main()

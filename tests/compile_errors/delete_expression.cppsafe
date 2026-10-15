@@ -1,0 +1,4 @@
+int* make() { return new int; }
+void main() {
+    delete make();
+}

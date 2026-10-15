@@ -1,0 +1,2 @@
+NullPointerException: attempted to dereference a null pointer
+    at line 9 in main()
