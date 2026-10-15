@@ -26,7 +26,7 @@ std::shared_ptr<Type> SemanticAnalyzer::convertTypeAST(const TypeAST& typeAST) {
     } else if (typeAST.isPointer) {
         return std::make_shared<Type>(TypeKind::Pointer, baseType);
     }
-    
+
     return baseType;
 }
 
@@ -80,7 +80,7 @@ void SemanticAnalyzer::visit(IdentifierExpr& node) {
 void SemanticAnalyzer::visit(BinaryExpr& node) {
     node.left->accept(*this);
     node.right->accept(*this);
-    
+
     auto leftType = nodeTypes[node.left.get()];
     auto rightType = nodeTypes[node.right.get()];
 
@@ -188,11 +188,11 @@ void SemanticAnalyzer::visit(NewExpr& node) {
 void SemanticAnalyzer::visit(DerefExpr& node) {
     node.expr->accept(*this);
     auto exprType = nodeTypes[node.expr.get()];
-    
+
     if (!isPointer(exprType) || exprType->kind == TypeKind::Nullptr_t) {
         throw SemanticError("Cannot dereference non-pointer type.", node.loc);
     }
-    
+
     nodeTypes[&node] = exprType->baseType;
 }
 
@@ -210,7 +210,7 @@ void SemanticAnalyzer::visit(ExprStmt& node) {
 
 void SemanticAnalyzer::visit(VarDeclStmt& node) {
     auto type = convertTypeAST(node.type);
-    
+
     if (type->kind == TypeKind::Void) {
         throw SemanticError("Cannot declare variable of type void.", node.loc);
     }
@@ -219,12 +219,12 @@ void SemanticAnalyzer::visit(VarDeclStmt& node) {
         node.initializer->accept(*this);
         checkType(type, nodeTypes[node.initializer.get()], node.loc);
     }
-    
+
     auto symbol = std::make_shared<Symbol>();
     symbol->name = node.name;
     symbol->kind = SymbolKind::Variable;
     symbol->type = type;
-    
+
     if (!symTable.define(symbol)) {
         throw SemanticError("Variable already declared in this scope: " + node.name, node.loc);
     }
@@ -235,7 +235,7 @@ void SemanticAnalyzer::visit(IfStmt& node) {
     if (!isBoolean(nodeTypes[node.condition.get()])) {
         throw SemanticError("If condition must be boolean.", node.loc);
     }
-    
+
     node.thenBranch->accept(*this);
     if (node.elseBranch) {
         node.elseBranch->accept(*this);
@@ -247,7 +247,7 @@ void SemanticAnalyzer::visit(WhileStmt& node) {
     if (!isBoolean(nodeTypes[node.condition.get()])) {
         throw SemanticError("While condition must be boolean.", node.loc);
     }
-    
+
     node.body->accept(*this);
 }
 
@@ -272,23 +272,23 @@ void SemanticAnalyzer::visit(DeleteStmt& node) {
 
 void SemanticAnalyzer::visit(FunctionDecl& node) {
     auto retType = convertTypeAST(node.returnType);
-    
+
     auto symbol = std::make_shared<Symbol>();
     symbol->name = node.name;
     symbol->kind = SymbolKind::Function;
     symbol->type = retType;
-    
+
     for (const auto& param : node.params) {
         symbol->paramTypes.push_back(convertTypeAST(param.type));
     }
-    
+
     if (!symTable.define(symbol)) {
         throw SemanticError("Function already declared: " + node.name, node.loc);
     }
-    
+
     symTable.enterScope();
     currentReturnType = retType;
-    
+
     for (const auto& param : node.params) {
         auto paramSymbol = std::make_shared<Symbol>();
         paramSymbol->name = param.name;
@@ -296,12 +296,12 @@ void SemanticAnalyzer::visit(FunctionDecl& node) {
         paramSymbol->type = convertTypeAST(param.type);
         symTable.define(paramSymbol);
     }
-    
+
     // Check body without entering new scope because params are in function scope
     for (auto& stmt : node.body->statements) {
         stmt->accept(*this);
     }
-    
+
     symTable.leaveScope();
 }
 

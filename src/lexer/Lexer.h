@@ -29,7 +29,7 @@ private:
     Token nextToken();
     Token identifierOrKeyword();
     Token number();
-    
+
     SourceLocation currentLocation() const;
 };
 

@@ -8,30 +8,30 @@ enum class Opcode {
     PUSH_CONST,
     LOAD_LOCAL,
     STORE_LOCAL,
-    
+
     ADD, SUB, MUL, DIV, MOD,
     EQ, NE, LT, GT, LE, GE,
     AND, OR, NOT,
-    
+
     JUMP,
     JUMP_IF_FALSE,
-    
+
     CALL,
     RETURN,
-    
+
     ALLOC,
     INC_REF,
     DEC_REF,
-    
+
     LOAD_ARRAY,
     STORE_ARRAY,
     STORE_ARRAY_INV,
     CHECK_BOUNDS,
-    
+
     CHECK_NULL,
     LOAD_POINTER,
     STORE_POINTER,
-    
+
     PRINT,
     POP,
     HALT

@@ -14,8 +14,8 @@ struct Instruction {
     std::string toString() const {
         std::string res = opcodeToString(op);
         // Only specific opcodes take operands
-        if (op == Opcode::PUSH_CONST || op == Opcode::LOAD_LOCAL || 
-            op == Opcode::STORE_LOCAL || op == Opcode::JUMP || 
+        if (op == Opcode::PUSH_CONST || op == Opcode::LOAD_LOCAL ||
+            op == Opcode::STORE_LOCAL || op == Opcode::JUMP ||
             op == Opcode::JUMP_IF_FALSE || op == Opcode::CALL ||
             op == Opcode::ALLOC) {
             res += " " + std::to_string(operand);

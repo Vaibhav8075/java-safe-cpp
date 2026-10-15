@@ -35,7 +35,7 @@ struct Token {
     std::string lexeme;
     SourceLocation loc;
 
-    Token(TokenType t, std::string lex, SourceLocation l) 
+    Token(TokenType t, std::string lex, SourceLocation l)
         : type(t), lexeme(std::move(lex)), loc(std::move(l)) {}
 
     std::string toString() const;

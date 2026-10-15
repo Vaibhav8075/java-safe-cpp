@@ -32,22 +32,22 @@ std::string readFile(const std::string& path) {
 }
 
 bool endsWith(const std::string& str, const std::string& suffix) {
-    return str.size() >= suffix.size() && 
+    return str.size() >= suffix.size() &&
            str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
 BytecodeProgram compileSource(const std::string& sourceFile) {
     std::string source = readFile(sourceFile);
-    
+
     Lexer lexer(source, sourceFile);
     auto tokens = lexer.tokenize();
-    
+
     Parser parser(tokens);
     auto ast = parser.parse();
-    
+
     SemanticAnalyzer semantic;
     semantic.analyze(*ast);
-    
+
     CodeGenerator codegen(semantic);
     return codegen.generate(*ast);
 }
@@ -57,9 +57,9 @@ int main(int argc, char** argv) {
         printUsage();
         return 1;
     }
-    
+
     std::string command = argv[1];
-    
+
     try {
         if (command == "--help" || command == "-h") {
             printUsage();
@@ -71,17 +71,17 @@ int main(int argc, char** argv) {
             }
             std::string sourceFile = argv[2];
             std::string outputFile = "out.jbc";
-            
+
             for (int i = 3; i < argc; ++i) {
                 if (std::string(argv[i]) == "-o" && i + 1 < argc) {
                     outputFile = argv[++i];
                 }
             }
-            
+
             auto prog = compileSource(sourceFile);
             prog.save(outputFile);
             std::cout << "Successfully compiled to " << outputFile << "\n";
-            
+
         } else if (command == "run") {
             if (argc < 3) {
                 std::cerr << "Error: missing input file.\n";
@@ -89,23 +89,23 @@ int main(int argc, char** argv) {
             }
             std::string inputFile = argv[2];
             bool trace = false;
-            
+
             for (int i = 3; i < argc; ++i) {
                 if (std::string(argv[i]) == "--trace") {
                     trace = true;
                 }
             }
-            
+
             BytecodeProgram prog;
             if (endsWith(inputFile, ".jbc")) {
                 prog = BytecodeProgram::load(inputFile);
             } else {
                 prog = compileSource(inputFile);
             }
-            
+
             VM vm(prog, trace);
             vm.run();
-            
+
         } else if (command == "dump") {
             if (argc < 3) {
                 std::cerr << "Error: missing bytecode file.\n";
@@ -114,14 +114,14 @@ int main(int argc, char** argv) {
             std::string inputFile = argv[2];
             auto prog = BytecodeProgram::load(inputFile);
             prog.dump(std::cout);
-            
+
         } else {
             std::cerr << "Unknown command: " << command << "\n";
             printUsage();
             return 1;
         }
     } catch (const CompilerError& e) {
-        std::cerr << "Compiler Error at " << e.getLocation().file << ":" 
+        std::cerr << "Compiler Error at " << e.getLocation().file << ":"
                   << e.getLocation().line << ":" << e.getLocation().column << "\n"
                   << e.what() << "\n";
         return 1;
@@ -129,6 +129,6 @@ int main(int argc, char** argv) {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;
     }
-    
+
     return 0;
 }

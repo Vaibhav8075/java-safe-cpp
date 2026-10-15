@@ -66,7 +66,7 @@ TypeAST Parser::parseType() {
 std::unique_ptr<ASTNode> Parser::declaration() {
     TypeAST type = parseType();
     const Token& nameToken = consume(TokenType::IDENTIFIER, "Expected identifier after type.");
-    
+
     if (match({TokenType::LPAREN})) {
         return functionDeclaration(type, nameToken.lexeme);
     } else {
@@ -78,7 +78,7 @@ std::unique_ptr<ASTNode> Parser::declaration() {
 std::unique_ptr<FunctionDecl> Parser::functionDeclaration(TypeAST returnType, const std::string& name) {
     SourceLocation loc = previous().loc;
     std::vector<Param> params;
-    
+
     if (!check(TokenType::RPAREN)) {
         do {
             TypeAST paramType = parseType();
@@ -87,31 +87,31 @@ std::unique_ptr<FunctionDecl> Parser::functionDeclaration(TypeAST returnType, co
         } while (match({TokenType::COMMA}));
     }
     consume(TokenType::RPAREN, "Expected ')' after parameters.");
-    
+
     consume(TokenType::LBRACE, "Expected '{' before function body.");
     auto body = block();
-    
+
     return std::make_unique<FunctionDecl>(returnType, name, std::move(params), std::move(body), loc);
 }
 
 std::unique_ptr<Stmt> Parser::varDeclaration(TypeAST type, const std::string& name) {
     SourceLocation loc = previous().loc;
-    
+
     if (match({TokenType::LBRACKET})) {
         const Token& sizeToken = consume(TokenType::INT_LITERAL, "Expected array size.");
         consume(TokenType::RBRACKET, "Expected ']' after array size.");
         type.isArray = true;
         type.arraySize = std::stoi(sizeToken.lexeme);
-        
+
         consume(TokenType::SEMICOLON, "Expected ';' after array declaration.");
         return std::make_unique<VarDeclStmt>(type, name, nullptr, loc);
     }
-    
+
     std::unique_ptr<Expr> initializer = nullptr;
     if (match({TokenType::ASSIGN})) {
         initializer = expression();
     }
-    
+
     consume(TokenType::SEMICOLON, "Expected ';' after variable declaration.");
     return std::make_unique<VarDeclStmt>(type, name, std::move(initializer), loc);
 }
@@ -123,13 +123,13 @@ std::unique_ptr<Stmt> Parser::statement() {
     if (match({TokenType::KW_RETURN})) return returnStatement();
     if (match({TokenType::KW_DELETE})) return deleteStatement();
     if (match({TokenType::LBRACE})) return block();
-    
+
     if (isTypeStart()) {
         TypeAST type = parseType();
         const Token& nameToken = consume(TokenType::IDENTIFIER, "Expected identifier after type.");
         return varDeclaration(type, nameToken.lexeme);
     }
-    
+
     return expressionStatement();
 }
 
@@ -138,14 +138,14 @@ std::unique_ptr<Stmt> Parser::ifStatement() {
     consume(TokenType::LPAREN, "Expected '(' after 'if'.");
     auto condition = expression();
     consume(TokenType::RPAREN, "Expected ')' after if condition.");
-    
+
     auto thenBranch = statement();
     std::unique_ptr<Stmt> elseBranch = nullptr;
-    
+
     if (match({TokenType::KW_ELSE})) {
         elseBranch = statement();
     }
-    
+
     return std::make_unique<IfStmt>(std::move(condition), std::move(thenBranch), std::move(elseBranch), loc);
 }
 
@@ -161,7 +161,7 @@ std::unique_ptr<Stmt> Parser::whileStatement() {
 std::unique_ptr<Stmt> Parser::forStatement() {
     SourceLocation loc = previous().loc;
     consume(TokenType::LPAREN, "Expected '(' after 'for'.");
-    
+
     std::unique_ptr<Stmt> initializer;
     if (match({TokenType::SEMICOLON})) {
         initializer = nullptr;
@@ -172,21 +172,21 @@ std::unique_ptr<Stmt> Parser::forStatement() {
     } else {
         initializer = expressionStatement();
     }
-    
+
     std::unique_ptr<Expr> condition = nullptr;
     if (!check(TokenType::SEMICOLON)) {
         condition = expression();
     }
     consume(TokenType::SEMICOLON, "Expected ';' after loop condition.");
-    
+
     std::unique_ptr<Expr> increment = nullptr;
     if (!check(TokenType::RPAREN)) {
         increment = expression();
     }
     consume(TokenType::RPAREN, "Expected ')' after for clauses.");
-    
+
     auto body = statement();
-    
+
     // Desugar for loop into while loop
     if (increment != nullptr) {
         std::vector<std::unique_ptr<Stmt>> blockStmts;
@@ -194,31 +194,31 @@ std::unique_ptr<Stmt> Parser::forStatement() {
         blockStmts.push_back(std::make_unique<ExprStmt>(std::move(increment), loc));
         body = std::make_unique<BlockStmt>(std::move(blockStmts), loc);
     }
-    
+
     if (condition == nullptr) {
         condition = std::make_unique<BoolLiteral>(true, loc);
     }
-    
+
     body = std::make_unique<WhileStmt>(std::move(condition), std::move(body), loc);
-    
+
     if (initializer != nullptr) {
         std::vector<std::unique_ptr<Stmt>> blockStmts;
         blockStmts.push_back(std::move(initializer));
         blockStmts.push_back(std::move(body));
         body = std::make_unique<BlockStmt>(std::move(blockStmts), loc);
     }
-    
+
     return body;
 }
 
 std::unique_ptr<BlockStmt> Parser::block() {
     SourceLocation loc = previous().loc;
     std::vector<std::unique_ptr<Stmt>> statements;
-    
+
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
         statements.push_back(statement());
     }
-    
+
     consume(TokenType::RBRACE, "Expected '}' after block.");
     return std::make_unique<BlockStmt>(std::move(statements), loc);
 }
@@ -226,11 +226,11 @@ std::unique_ptr<BlockStmt> Parser::block() {
 std::unique_ptr<Stmt> Parser::returnStatement() {
     SourceLocation loc = previous().loc;
     std::unique_ptr<Expr> value = nullptr;
-    
+
     if (!check(TokenType::SEMICOLON)) {
         value = expression();
     }
-    
+
     consume(TokenType::SEMICOLON, "Expected ';' after return value.");
     return std::make_unique<ReturnStmt>(std::move(value), loc);
 }
@@ -254,16 +254,16 @@ std::unique_ptr<Expr> Parser::expression() {
 
 std::unique_ptr<Expr> Parser::assignment() {
     auto expr = logicalOr();
-    
+
     if (match({TokenType::ASSIGN})) {
         Token equals = previous();
         auto value = assignment();
-        
+
         // Convert the LHS (expr) into an assignment logic, typically AST represents this as binary,
         // or we check if it's a valid l-value during semantic analysis.
         return std::make_unique<BinaryExpr>(std::move(expr), equals, std::move(value), equals.loc);
     }
-    
+
     return expr;
 }
 
@@ -331,11 +331,11 @@ std::unique_ptr<Expr> Parser::unary() {
     if (match({TokenType::NOT, TokenType::MINUS, TokenType::STAR})) {
         Token op = previous();
         auto right = unary();
-        
+
         if (op.type == TokenType::STAR) {
             return std::make_unique<DerefExpr>(std::move(right), op.loc);
         }
-        
+
         return std::make_unique<UnaryExpr>(op, std::move(right), op.loc);
     }
     return postfix();
@@ -343,14 +343,14 @@ std::unique_ptr<Expr> Parser::unary() {
 
 std::unique_ptr<Expr> Parser::postfix() {
     auto expr = primary();
-    
+
     while (true) {
         if (match({TokenType::LBRACKET})) {
             Token bracket = previous();
             auto index = expression();
             consume(TokenType::RBRACKET, "Expected ']' after array index.");
             expr = std::make_unique<ArrayAccessExpr>(
-                dynamic_cast<IdentifierExpr*>(expr.get()) ? dynamic_cast<IdentifierExpr*>(expr.get())->name : "", 
+                dynamic_cast<IdentifierExpr*>(expr.get()) ? dynamic_cast<IdentifierExpr*>(expr.get())->name : "",
                 std::move(index), bracket.loc);
         } else if (match({TokenType::LPAREN})) {
             Token paren = previous();
@@ -367,7 +367,7 @@ std::unique_ptr<Expr> Parser::postfix() {
             break;
         }
     }
-    
+
     return expr;
 }
 
@@ -375,27 +375,27 @@ std::unique_ptr<Expr> Parser::primary() {
     if (match({TokenType::KW_FALSE})) return std::make_unique<BoolLiteral>(false, previous().loc);
     if (match({TokenType::KW_TRUE})) return std::make_unique<BoolLiteral>(true, previous().loc);
     if (match({TokenType::KW_NULLPTR})) return std::make_unique<NullptrLiteral>(previous().loc);
-    
+
     if (match({TokenType::INT_LITERAL})) {
         return std::make_unique<IntLiteral>(std::stoi(previous().lexeme), previous().loc);
     }
-    
+
     if (match({TokenType::IDENTIFIER})) {
         return std::make_unique<IdentifierExpr>(previous().lexeme, previous().loc);
     }
-    
+
     if (match({TokenType::KW_NEW})) {
         SourceLocation loc = previous().loc;
         TypeAST type = parseType();
         return std::make_unique<NewExpr>(Token(TokenType::IDENTIFIER, type.name, loc), loc);
     }
-    
+
     if (match({TokenType::LPAREN})) {
         auto expr = expression();
         consume(TokenType::RPAREN, "Expected ')' after expression.");
         return expr;
     }
-    
+
     throw ParserError("Expected expression.", peek().loc);
 }
 

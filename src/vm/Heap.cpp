@@ -15,7 +15,7 @@ int Heap::allocate(int size) {
 
 void Heap::incRef(int ptr) {
     if (ptr == 0) return; // Nullptr check
-    
+
     auto it = objects.find(ptr);
     if (it != objects.end() && it->second.isAlive) {
         it->second.refCount++;
@@ -26,7 +26,7 @@ void Heap::incRef(int ptr) {
 
 void Heap::decRef(int ptr) {
     if (ptr == 0) return; // Nullptr check
-    
+
     auto it = objects.find(ptr);
     if (it != objects.end() && it->second.isAlive) {
         it->second.refCount--;
@@ -45,7 +45,7 @@ ManagedObject& Heap::getObject(int ptr) {
     if (ptr == 0) {
         throw NullPointerException();
     }
-    
+
     auto it = objects.find(ptr);
     if (it != objects.end() && it->second.isAlive) {
         return it->second;

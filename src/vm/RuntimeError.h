@@ -12,13 +12,13 @@ public:
 
 class NullPointerException : public RuntimeError {
 public:
-    NullPointerException(const std::string& msg = "NullPointerException: attempted to dereference a null pointer") 
+    NullPointerException(const std::string& msg = "NullPointerException: attempted to dereference a null pointer")
         : RuntimeError(msg) {}
 };
 
 class ArrayIndexOutOfBoundsException : public RuntimeError {
 public:
-    ArrayIndexOutOfBoundsException(int index, int length) 
+    ArrayIndexOutOfBoundsException(int index, int length)
         : RuntimeError("ArrayIndexOutOfBoundsException: index " + std::to_string(index) + ", length " + std::to_string(length)) {}
 };
 
@@ -29,7 +29,7 @@ public:
 
 class InvalidInstructionException : public RuntimeError {
 public:
-    InvalidInstructionException(const std::string& msg = "InvalidInstructionException") 
+    InvalidInstructionException(const std::string& msg = "InvalidInstructionException")
         : RuntimeError(msg) {}
 };
 

@@ -5,9 +5,9 @@
 
 namespace jscpp {
 
-VM::VM(const BytecodeProgram& program, bool trace) 
+VM::VM(const BytecodeProgram& program, bool trace)
     : prog(program), trace(trace) {
-    
+
     if (prog.mainEntryPoint == -1) {
         throw RuntimeError("No main function found.");
     }
@@ -32,25 +32,25 @@ void VM::run() {
     if (mainFuncIt == prog.functions.end()) {
         throw RuntimeError("main not found in bytecode meta.");
     }
-    
+
     const FunctionMeta& mainMeta = mainFuncIt->second;
-    
+
     ip = prog.mainEntryPoint;
-    
+
     callStack.push_back({-1, 0});
     locals.resize(mainMeta.numLocals);
-    
+
     try {
         while (ip >= 0 && ip < (int)prog.instructions.size()) {
             Instruction inst = prog.instructions[ip++];
-            
+
             if (trace) {
-                std::cout << "IP=" << std::setw(4) << std::setfill('0') << (ip - 1) 
+                std::cout << "IP=" << std::setw(4) << std::setfill('0') << (ip - 1)
                           << "  " << inst.toString() << "\n";
             }
-            
+
             executeInstruction(inst);
-            
+
             if (inst.op == Opcode::HALT) {
                 break;
             }
@@ -58,7 +58,7 @@ void VM::run() {
     } catch (const std::exception& e) {
         std::cerr << "Runtime Error:\n" << e.what() << "\n";
     }
-    
+
     heap.cleanup();
 }
 
@@ -180,39 +180,39 @@ void VM::executeInstruction(const Instruction& inst) {
                     break;
                 }
             }
-            
+
             if (!targetMeta) {
                 throw RuntimeError("Function not found.");
             }
-            
+
             if (callStack.size() >= MAX_CALL_STACK) {
                 throw StackOverflowException();
             }
-            
+
             // Pop arguments to new local space
             int newLocalBase = locals.size();
             locals.resize(locals.size() + targetMeta->numLocals);
-            
+
             // Args are pushed in order: a, b. Stack top is last arg.
             for (int i = targetMeta->numArgs - 1; i >= 0; --i) {
                 locals[newLocalBase + i] = pop();
             }
-            
+
             callStack.push_back({ip, newLocalBase});
             ip = targetMeta->entryPoint;
             break;
         }
         case Opcode::RETURN: {
             RuntimeValue retVal = pop(); // Assume 1 return value
-            
+
             Frame frame = callStack.back();
             callStack.pop_back();
-            
+
             locals.resize(frame.localBase);
             ip = frame.returnAddress;
-            
+
             push(retVal);
-            
+
             if (callStack.empty()) {
                 // Return from main
                 ip = prog.instructions.size(); // end execution

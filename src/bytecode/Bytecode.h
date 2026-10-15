@@ -25,9 +25,9 @@ public:
 
     int addConstant(int value);
     void addInstruction(const Instruction& inst);
-    
+
     void dump(std::ostream& os) const;
-    
+
     // Serialization
     void save(const std::string& filename) const;
     static BytecodeProgram load(const std::string& filename);

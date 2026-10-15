@@ -22,7 +22,7 @@ private:
     bool check(TokenType type) const;
     bool match(std::initializer_list<TokenType> types);
     const Token& consume(TokenType type, const std::string& message);
-    
+
     bool isTypeStart() const;
 
     // Parsing methods
@@ -30,7 +30,7 @@ private:
     std::unique_ptr<FunctionDecl> functionDeclaration(TypeAST returnType, const std::string& name);
     std::unique_ptr<Stmt> statement();
     std::unique_ptr<Stmt> varDeclaration(TypeAST type, const std::string& name);
-    
+
     std::unique_ptr<Stmt> ifStatement();
     std::unique_ptr<Stmt> whileStatement();
     std::unique_ptr<Stmt> forStatement();
@@ -50,7 +50,7 @@ private:
     std::unique_ptr<Expr> unary();
     std::unique_ptr<Expr> postfix();
     std::unique_ptr<Expr> primary();
-    
+
     TypeAST parseType();
 };
 

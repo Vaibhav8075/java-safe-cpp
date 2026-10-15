@@ -26,10 +26,10 @@ bool SymbolTable::define(std::shared_ptr<Symbol> symbol) {
     if (currentScope.symbols.find(symbol->name) != currentScope.symbols.end()) {
         return false; // Already defined in current scope
     }
-    
+
     if (symbol->kind == SymbolKind::Variable && symbol->localIndex == -1) {
         symbol->localIndex = currentScope.nextLocalIndex++;
-        
+
         // Propagate nextLocalIndex back up to handle nested blocks extending frame size
         for (auto& s : scopes) {
             if (s.nextLocalIndex < currentScope.nextLocalIndex) {
@@ -37,7 +37,7 @@ bool SymbolTable::define(std::shared_ptr<Symbol> symbol) {
             }
         }
     }
-    
+
     currentScope.symbols[symbol->name] = symbol;
     return true;
 }

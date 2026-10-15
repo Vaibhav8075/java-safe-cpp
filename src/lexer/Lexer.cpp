@@ -122,7 +122,7 @@ Token Lexer::nextToken() {
         case '!': return match('=') ? Token(TokenType::NEQ, "!=", loc) : Token(TokenType::NOT, "!", loc);
         case '<': return match('=') ? Token(TokenType::LTE, "<=", loc) : Token(TokenType::LT, "<", loc);
         case '>': return match('=') ? Token(TokenType::GTE, ">=", loc) : Token(TokenType::GT, ">", loc);
-        case '&': 
+        case '&':
             if (match('&')) return Token(TokenType::AND, "&&", loc);
             throw LexerError("Unexpected character '&'", loc);
         case '|':
@@ -154,13 +154,13 @@ Token Lexer::identifierOrKeyword() {
     if (it != keywords.end()) {
         return Token(it->second, lexeme, loc);
     }
-    
+
     // Explicitly reject unsupported C++ features as requested by feedback
-    if (lexeme == "template" || lexeme == "class" || lexeme == "struct" || 
+    if (lexeme == "template" || lexeme == "class" || lexeme == "struct" ||
         lexeme == "public" || lexeme == "private" || lexeme == "virtual") {
         throw LexerError("Error: This project only supports a minimal subset of C++. Features like templates, classes, and structs are explicitly excluded.", loc);
     }
-    
+
     return Token(TokenType::IDENTIFIER, lexeme, loc);
 }
 
