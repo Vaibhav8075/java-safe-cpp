@@ -1,0 +1,8 @@
+// Unbounded recursion stops with an exception instead of crashing the host process
+int down(int n) {
+    return down(n + 1);
+}
+
+void main() {
+    print(down(0));
+}

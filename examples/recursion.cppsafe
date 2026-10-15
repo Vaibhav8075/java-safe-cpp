@@ -1,0 +1,29 @@
+// Recursion, and calling functions that are defined later in the file
+void main() {
+    print(fact(10));
+    print(fib(15));
+    print(gcd(1071, 462));
+}
+
+int fact(int n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * fact(n - 1);
+}
+
+int fib(int n) {
+    if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+int gcd(int a, int b) {
+    while (b != 0) {
+        int t = a % b;
+        a = b;
+        b = t;
+    }
+    return a;
+}

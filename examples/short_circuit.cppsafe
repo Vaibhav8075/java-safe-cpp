@@ -1,0 +1,16 @@
+// The right side of && / || only runs when it is needed,
+// so the null check guards the dereference
+bool isPositive(int* p) {
+    return p != nullptr && *p > 0;
+}
+
+void main() {
+    int* p = nullptr;
+    if (isPositive(p)) { print(1); } else { print(0); }
+
+    p = new int;
+    *p = 5;
+    if (isPositive(p)) { print(1); } else { print(0); }
+
+    if (p == nullptr || *p == 5) { print(2); }
+}

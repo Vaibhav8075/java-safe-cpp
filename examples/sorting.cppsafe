@@ -1,0 +1,20 @@
+// Bubble sort on a fixed-size array, every access is bounds checked
+void main() {
+    int a[8];
+    a[0] = 42; a[1] = 7; a[2] = 19; a[3] = -3;
+    a[4] = 88; a[5] = 0; a[6] = 7;  a[7] = 25;
+
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 7 - i; j++) {
+            if (a[j] > a[j + 1]) {
+                int t = a[j];
+                a[j] = a[j + 1];
+                a[j + 1] = t;
+            }
+        }
+    }
+
+    for (int i = 0; i < 8; i++) {
+        print(a[i]);
+    }
+}

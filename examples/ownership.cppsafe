@@ -1,0 +1,74 @@
+// Automatic reference counting across functions, loops, early returns and delete.
+// Run with --stats: every allocation is freed, so live-at-exit is 0.
+
+int* make(int v) {          // returns an owned pointer to the caller
+    int* p = new int;
+    *p = v;
+    return p;
+}
+
+int* same(int* q) {         // the parameter is released, the returned copy survives
+    return q;
+}
+
+int readTwice(int* p) {
+    int* alias = p;         // refcount goes up, and back down when we return
+    return *p + *alias;
+}
+
+int firstBig(int n) {
+    for (int i = 0; i < n; i++) {
+        int* box = new int; // freed at the end of every iteration
+        *box = i * 10;
+        if (*box > 25) {
+            return *box;    // early return still releases box
+        }
+    }
+    return -1;
+}
+
+void main() {
+    int* a = make(5);
+    int* b = same(a);
+    print(readTwice(b));    // 10
+
+    a = make(7);            // a's old object is still owned by b, so it survives
+    print(*a + *b);         // 12
+    print(firstBig(10));    // 30
+
+    int k = 0;
+    while (k < 3) {
+        int* t = new int;
+        *t = k;
+        k += 1;
+    }
+
+    make(1);                // result unused: released immediately
+    new int;                // same
+
+    int* d = new int;
+    int* e = d;
+    delete d;               // d becomes nullptr, e still owns the object
+    *e = 4;
+    print(*e);              // 4
+    if (d == nullptr) {
+        print(111);
+    }
+
+    bool ok = true && !(false || k != 3);
+    if (ok) {
+        print(222);
+    }
+
+    int arr[4];
+    for (int i = 0; i < 4; ++i) {
+        arr[i] = i * i;
+    }
+    arr[3] += 100;
+    print(arr[3]);          // 109
+
+    int x = 10;
+    print(x++ + ++x);       // operands run left to right: 10 + 12 = 22
+    print(-7 / 2);          // -3 (truncates toward zero, like C++ and Java)
+    print(-7 % 3);          // -1
+}

@@ -1,0 +1,8 @@
+// int arithmetic wraps around like Java instead of being undefined behaviour
+void main() {
+    int big = 2147483647;
+    print(big + 1);
+    print(-big - 1);
+    print((-big - 1) / -1);
+    print(100000 * 100000);
+}

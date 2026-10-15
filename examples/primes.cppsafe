@@ -1,0 +1,15 @@
+// Sieve of Eratosthenes on a bool array (arrays start zeroed, so all false)
+void main() {
+    bool composite[50];
+    int count = 0;
+    for (int i = 2; i < 50; i++) {
+        if (!composite[i]) {
+            print(i);
+            count += 1;
+            for (int j = i * i; j < 50; j += i) {
+                composite[j] = true;
+            }
+        }
+    }
+    print(count);
+}

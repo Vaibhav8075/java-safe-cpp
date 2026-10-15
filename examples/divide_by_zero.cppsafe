@@ -1,0 +1,8 @@
+int average(int total, int count) {
+    return total / count;
+}
+
+void main() {
+    print(average(10, 2));
+    print(average(10, 0));
+}

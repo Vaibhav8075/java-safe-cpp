@@ -1,0 +1,10 @@
+// delete releases this variable's reference and sets it to nullptr,
+// so a later dereference is a clean NullPointerException, never a dangling read
+void main() {
+    int* p = new int;
+    int* q = p;
+    *p = 9;
+    delete p;
+    print(*q);   // q still owns the object, so this is fine
+    print(*p);   // p is now nullptr
+}
