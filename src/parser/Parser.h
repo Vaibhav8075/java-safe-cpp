@@ -52,6 +52,11 @@ private:
     std::unique_ptr<Expr> primary();
 
     TypeAST parseType();
+
+    // Desugaring helpers for ++, -- and compound assignment
+    static std::unique_ptr<Expr> cloneSimple(const Expr& expr);
+    std::unique_ptr<Expr> makeUpdate(std::unique_ptr<Expr> target, TokenType arithOp,
+                                     std::unique_ptr<Expr> amount, const Token& opToken);
 };
 
 } // namespace jscpp

@@ -58,6 +58,9 @@ TypeAST Parser::parseType() {
 
     if (match({TokenType::STAR})) {
         type.isPointer = true;
+        if (check(TokenType::STAR)) {
+            throw ParserError("Pointers to pointers are not supported in this subset.", peek().loc);
+        }
     }
 
     return type;
@@ -69,10 +72,10 @@ std::unique_ptr<ASTNode> Parser::declaration() {
 
     if (match({TokenType::LPAREN})) {
         return functionDeclaration(type, nameToken.lexeme);
-    } else {
-        // Variable declaration
-        return varDeclaration(type, nameToken.lexeme);
     }
+    // The VM only has per-frame locals, so a global would silently read the wrong slot
+    throw ParserError("Global variables are not supported; declare '" + nameToken.lexeme +
+                      "' inside a function.", nameToken.loc);
 }
 
 std::unique_ptr<FunctionDecl> Parser::functionDeclaration(TypeAST returnType, const std::string& name) {
@@ -98,10 +101,13 @@ std::unique_ptr<Stmt> Parser::varDeclaration(TypeAST type, const std::string& na
     SourceLocation loc = previous().loc;
 
     if (match({TokenType::LBRACKET})) {
-        const Token& sizeToken = consume(TokenType::INT_LITERAL, "Expected array size.");
+        const Token& sizeToken = consume(TokenType::INT_LITERAL, "Expected a constant array size, e.g. int a[10];");
         consume(TokenType::RBRACKET, "Expected ']' after array size.");
         type.isArray = true;
         type.arraySize = std::stoi(sizeToken.lexeme);
+        if (type.arraySize <= 0) {
+            throw ParserError("Array size must be at least 1.", sizeToken.loc);
+        }
 
         consume(TokenType::SEMICOLON, "Expected ';' after array declaration.");
         return std::make_unique<VarDeclStmt>(type, name, nullptr, loc);
@@ -245,7 +251,8 @@ std::unique_ptr<Stmt> Parser::deleteStatement() {
 std::unique_ptr<Stmt> Parser::expressionStatement() {
     auto expr = expression();
     consume(TokenType::SEMICOLON, "Expected ';' after expression.");
-    return std::make_unique<ExprStmt>(std::move(expr), expr->loc);
+    SourceLocation loc = expr->loc;
+    return std::make_unique<ExprStmt>(std::move(expr), loc);
 }
 
 std::unique_ptr<Expr> Parser::expression() {
@@ -258,13 +265,62 @@ std::unique_ptr<Expr> Parser::assignment() {
     if (match({TokenType::ASSIGN})) {
         Token equals = previous();
         auto value = assignment();
-
-        // Convert the LHS (expr) into an assignment logic, typically AST represents this as binary,
-        // or we check if it's a valid l-value during semantic analysis.
+        // Whether the left side is a valid l-value is checked by the semantic analyzer
         return std::make_unique<BinaryExpr>(std::move(expr), equals, std::move(value), equals.loc);
     }
 
+    if (match({TokenType::PLUS_ASSIGN, TokenType::MINUS_ASSIGN, TokenType::STAR_ASSIGN,
+               TokenType::SLASH_ASSIGN, TokenType::PERCENT_ASSIGN})) {
+        Token op = previous();
+        auto value = assignment();
+        TokenType arith = TokenType::PLUS;
+        switch (op.type) {
+            case TokenType::MINUS_ASSIGN: arith = TokenType::MINUS; break;
+            case TokenType::STAR_ASSIGN: arith = TokenType::STAR; break;
+            case TokenType::SLASH_ASSIGN: arith = TokenType::SLASH; break;
+            case TokenType::PERCENT_ASSIGN: arith = TokenType::PERCENT; break;
+            default: break;
+        }
+        return makeUpdate(std::move(expr), arith, std::move(value), op);
+    }
+
     return expr;
+}
+
+// Copies an l-value expression that has no side effects (x, a[i], a[3], *p) so that
+// "x += y" can be rewritten as "x = x + y" without evaluating anything twice.
+std::unique_ptr<Expr> Parser::cloneSimple(const Expr& expr) {
+    if (auto id = dynamic_cast<const IdentifierExpr*>(&expr)) {
+        return std::make_unique<IdentifierExpr>(id->name, id->loc);
+    }
+    if (auto lit = dynamic_cast<const IntLiteral*>(&expr)) {
+        return std::make_unique<IntLiteral>(lit->value, lit->loc);
+    }
+    if (auto arr = dynamic_cast<const ArrayAccessExpr*>(&expr)) {
+        auto index = cloneSimple(*arr->index);
+        if (!index) return nullptr;
+        return std::make_unique<ArrayAccessExpr>(arr->arrayName, std::move(index), arr->loc);
+    }
+    if (auto deref = dynamic_cast<const DerefExpr*>(&expr)) {
+        if (!dynamic_cast<const IdentifierExpr*>(deref->expr.get())) return nullptr;
+        return std::make_unique<DerefExpr>(cloneSimple(*deref->expr), deref->loc);
+    }
+    return nullptr;
+}
+
+std::unique_ptr<Expr> Parser::makeUpdate(std::unique_ptr<Expr> target, TokenType arithOp,
+                                         std::unique_ptr<Expr> amount, const Token& opToken) {
+    auto copy = cloneSimple(*target);
+    if (!copy || dynamic_cast<IntLiteral*>(target.get())) {
+        throw ParserError("'" + opToken.lexeme + "' needs a variable, an array element with a simple index, "
+                          "or *pointer on its left side.", opToken.loc);
+    }
+    std::string arithLexeme = arithOp == TokenType::PLUS ? "+" : arithOp == TokenType::MINUS ? "-" :
+                              arithOp == TokenType::STAR ? "*" : arithOp == TokenType::SLASH ? "/" : "%";
+    Token arith(arithOp, arithLexeme, opToken.loc);
+    Token assign(TokenType::ASSIGN, "=", opToken.loc);
+    auto combined = std::make_unique<BinaryExpr>(std::move(copy), arith, std::move(amount), opToken.loc);
+    return std::make_unique<BinaryExpr>(std::move(target), assign, std::move(combined), opToken.loc);
 }
 
 std::unique_ptr<Expr> Parser::logicalOr() {
@@ -328,6 +384,14 @@ std::unique_ptr<Expr> Parser::factor() {
 }
 
 std::unique_ptr<Expr> Parser::unary() {
+    if (match({TokenType::INC, TokenType::DEC})) {
+        // ++x  ->  x = x + 1   (the expression's value is the new value)
+        Token op = previous();
+        auto target = unary();
+        auto one = std::make_unique<IntLiteral>(1, op.loc);
+        return makeUpdate(std::move(target), op.type == TokenType::INC ? TokenType::PLUS : TokenType::MINUS,
+                          std::move(one), op);
+    }
     if (match({TokenType::NOT, TokenType::MINUS, TokenType::STAR})) {
         Token op = previous();
         auto right = unary();
@@ -347,13 +411,27 @@ std::unique_ptr<Expr> Parser::postfix() {
     while (true) {
         if (match({TokenType::LBRACKET})) {
             Token bracket = previous();
+            auto base = dynamic_cast<IdentifierExpr*>(expr.get());
+            if (!base) {
+                throw ParserError("Only a named array can be indexed, e.g. arr[i].", bracket.loc);
+            }
             auto index = expression();
             consume(TokenType::RBRACKET, "Expected ']' after array index.");
-            expr = std::make_unique<ArrayAccessExpr>(
-                dynamic_cast<IdentifierExpr*>(expr.get()) ? dynamic_cast<IdentifierExpr*>(expr.get())->name : "",
-                std::move(index), bracket.loc);
+            expr = std::make_unique<ArrayAccessExpr>(base->name, std::move(index), bracket.loc);
+        } else if (match({TokenType::INC, TokenType::DEC})) {
+            // x++  ->  (x = x + 1) - 1   (the expression's value is the old value)
+            Token op = previous();
+            bool inc = op.type == TokenType::INC;
+            auto one = std::make_unique<IntLiteral>(1, op.loc);
+            auto updated = makeUpdate(std::move(expr), inc ? TokenType::PLUS : TokenType::MINUS, std::move(one), op);
+            Token undo(inc ? TokenType::MINUS : TokenType::PLUS, inc ? "-" : "+", op.loc);
+            expr = std::make_unique<BinaryExpr>(std::move(updated), undo,
+                                                std::make_unique<IntLiteral>(1, op.loc), op.loc);
         } else if (match({TokenType::LPAREN})) {
             Token paren = previous();
+            if (!dynamic_cast<IdentifierExpr*>(expr.get())) {
+                throw ParserError("Only a named function can be called.", paren.loc);
+            }
             std::vector<std::unique_ptr<Expr>> args;
             if (!check(TokenType::RPAREN)) {
                 do {
@@ -387,6 +465,9 @@ std::unique_ptr<Expr> Parser::primary() {
     if (match({TokenType::KW_NEW})) {
         SourceLocation loc = previous().loc;
         TypeAST type = parseType();
+        if (type.isPointer || check(TokenType::LBRACKET)) {
+            throw ParserError("Only 'new int' and 'new bool' are supported (no new T* or new T[n]).", loc);
+        }
         return std::make_unique<NewExpr>(Token(TokenType::IDENTIFIER, type.name, loc), loc);
     }
 
