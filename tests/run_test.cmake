@@ -31,9 +31,7 @@ endif()
 
 if(ERR)
     file(READ "${ERR}" needle)
-    string(REPLACE "
-" "
-" needle "${needle}")
+    string(REPLACE "\r\n" "\n" needle "${needle}")
     string(STRIP "${needle}" needle)
     if(rc EQUAL 0)
         message(FATAL_ERROR "expected the program to fail with: ${needle}")
