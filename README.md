@@ -1,82 +1,125 @@
-# Java-Safe C++
+# Java-Safe C++ (jscpp)
 
-Java-Safe C++ is a fully functional compiler and virtual machine designed to execute a restricted subset of C++ with strict memory safety guarantees.
+A compiler and stack-based virtual machine for a small, memory-safe subset of C++. Programs are
+compiled to a custom bytecode, and the compiler inserts the checks that make the classic C++
+memory bugs impossible: null dereferences, out-of-bounds indexing, leaks and dangling pointers
+all become either a clean runtime exception or something the compiler rejects.
 
-## Motivation
+Everything is written from scratch in C++17 (no LLVM, no Lex/Yacc) and builds with CMake on
+Windows and Linux.
 
-C++ is a powerful language, but it notoriously lacks memory safety, often leading to undefined behavior, buffer overflows, and null pointer dereferences. The goal of this project is to demonstrate how a compiler can integrate memory safety mechanisms directly into its pipeline and target a custom VM, effectively making a subset of C++ as memory-safe as Java.
+```
+$ jscpp run examples/bounds.cppsafe
+10
+Runtime Error:
+ArrayIndexOutOfBoundsException: index 5, length 3
+    at line 7 in main() (instruction 20)
+```
 
-## Design Goals
+## Pipeline
 
-- **No Undefined Behavior**: Supported unsafe operations result in graceful runtime exceptions.
-- **Genuine Implementation**: Built from scratch without external dependencies like LLVM or Lex/Yacc.
-- **Understandable Architecture**: Clear compiler phases implemented in standard C++17.
+```
+source.cppsafe -> Lexer -> Parser -> Semantic Analyzer -> Code Generator -> bytecode (.jbc) -> VM
+                  tokens    AST      types + scopes       safety checks                  managed heap
+```
 
-## Architecture Pipeline
+| Stage | File | What it does |
+|-------|------|--------------|
+| Lexer | `src/lexer/` | Turns text into tokens with line/column, rejects excluded C++ features early |
+| Parser | `src/parser/` | Hand-written recursive descent, builds the AST, desugars `for`, `++`, `+=` |
+| Semantic analysis | `src/semantic/` | Two passes: declares all functions, then type-checks every body |
+| Code generator | `src/bytecode/CodeGenerator.cpp` | Emits bytecode plus `CHECK_NULL`, `CHECK_BOUNDS`, `INC_REF`, `DEC_REF` |
+| Bytecode | `src/bytecode/Bytecode.cpp` | Portable little-endian `.jbc` format, verified on every load |
+| VM | `src/vm/` | Operand stack, call stack, reference-counted heap, wrapping 32-bit ints |
 
-The compiler follows a classic multi-stage pipeline:
-1. **Lexer**: Tokenizes raw source code and tracks precise line/column information for diagnostics.
-2. **Parser**: Hand-written recursive-descent parser that constructs a custom Abstract Syntax Tree (AST).
-3. **Semantic Analyzer**: Enforces static typing, variable scoping, and function resolution.
-4. **Code Generator**: Lowers the AST into our custom bytecode and seamlessly injects memory safety opcodes (`CHECK_NULL`, `CHECK_BOUNDS`, `INC_REF`, `DEC_REF`).
-5. **Virtual Machine**: A stack-based runtime engine equipped with an Operand Stack, Call Stack, and a Managed Heap.
+## The language
 
-## Supported Language Subset
+```cpp
+int* make(int v) {          // functions may be defined in any order
+    int* p = new int;
+    *p = v;
+    return p;               // the caller receives a live reference
+}
 
-The compiler supports a subset of C++ including:
-- Variables (`int`, `bool`, pointers, arrays)
-- Control flow (`if`, `while`, `for`, `return`)
-- Functions
-- Pointer arithmetic and dereferencing (`*p`, `new`)
-- Array indexing (`arr[i]`)
+void main() {
+    int a[5];               // fixed-size arrays, zero-initialised
+    for (int i = 0; i < 5; i++) {
+        a[i] = i * i;
+    }
+    int* p = make(a[4]);
+    *p += 1;
+    print(*p);              // 17
+}                           // p and a are released here automatically
+```
 
-## Safety Mechanisms
+- Types: `int` (32-bit), `bool`, `void` (return type only), `int*`, `bool*`, local arrays `T name[N]`
+- Statements: `if`/`else`, `while`, `for`, `return`, `delete`, blocks
+- Operators: `+ - * / %`, `== != < > <= >=`, `&& || !` (short-circuit), `=`, `+= -= *= /= %=`, `++ --`
+- `new int` / `new bool`, dereference `*p`, indexing `a[i]`, recursion, built-in `print(int)`
 
-The compiler enforces safety by injecting checks during code generation:
-1. **Null Pointer Checks**: Generates `CHECK_NULL` before pointer dereferences.
-2. **Array Bounds Checks**: Generates `CHECK_BOUNDS` before array accesses.
-3. **Automatic Reference Counting (ARC)**: Tracks dynamic allocations (`new`) and reclaims them safely.
+Rejected with a specific error message: templates, classes/structs, namespaces, exceptions,
+`#include`/`#define`, strings, `float`/`double`/`char`, the address-of operator `&`, pointer
+arithmetic, pointers to pointers, arrays of pointers, global variables, whole-array assignment,
+and non-void functions that can end without returning.
 
-## Build Instructions
+## Safety guarantees
 
-Requirements:
-- C++17 compiler
-- CMake 3.15+
+| Bug in normal C++ | What happens here |
+|-------------------|-------------------|
+| Null dereference | `CHECK_NULL` before every `*p` -> `NullPointerException` |
+| Buffer overflow | `CHECK_BOUNDS` before every `a[i]` -> `ArrayIndexOutOfBoundsException` (the VM re-checks too) |
+| Memory leak | Automatic reference counting: objects are freed as soon as the last owner goes away |
+| Dangling pointer / double free | `delete p` only drops `p`'s reference and sets `p = nullptr`; other owners stay valid |
+| Signed overflow (UB) | Wraps like Java: `2147483647 + 1 == -2147483648` |
+| Division by zero | `DivisionByZeroException` |
+| Unbounded recursion | `StackOverflowException` after 1000 frames |
+| Forged addresses | No `&`, no pointer arithmetic, heap handles are never reused |
+| Corrupted bytecode | The loader verifies every opcode, operand, jump target and table index |
+
+Details are in [docs/safety-model.md](docs/safety-model.md).
+
+## Build
+
+Requirements: a C++17 compiler and CMake 3.15+.
 
 ```bash
-mkdir build
-cd build
-cmake ..
-cmake --build .
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build        # 60 tests
 ```
 
 ## Usage
 
 ```bash
-# Compile and run
-./jscpp run ../examples/hello.cppsafe
-
-# Trace execution
-./jscpp run ../examples/arrays.cppsafe --trace
-
-# Dump bytecode
-./jscpp compile ../examples/pointers.cppsafe -o pointers.jbc
-./jscpp dump pointers.jbc
+jscpp run examples/ownership.cppsafe --stats   # run, then print heap allocation/free counts
+jscpp run examples/loops.cppsafe --trace       # show each instruction and the operand stack
+jscpp tokens examples/hello.cppsafe            # lexer output
+jscpp ast examples/refcount.cppsafe            # parse tree
+jscpp dump examples/refcount.cppsafe           # generated bytecode with source lines
+jscpp compile examples/sorting.cppsafe -o sorting.jbc
+jscpp run sorting.jbc                          # .jbc files run on any platform
 ```
 
-## Supported Language Subset & Limitations
+`run` exits with status 0 on success and 1 on a compile or runtime error.
 
-This compiler is designed as a proof-of-concept for memory-safe execution. It strictly supports a **minimal subset of C++** (basic primitives, pointers, arrays, loops, and functions). 
+## Tests
 
-**Explicit Exclusions:**
-This project explicitly excludes advanced C++ features. The compiler will deliberately reject the following with specific error messages:
-- Templates
-- Classes and Structs
-- The Standard Template Library (STL)
-- Preprocessor macros (e.g., `#include`, `#define`)
-- Multiple inheritance and object-oriented features
+`tests/run_test.cmake` runs each program in `examples/` and compares stdout (including the heap
+statistics line) with `tests/expected/`, checks the exit status, and for the failing demos checks
+the exception text. Each example is run twice: from source and after a `.jbc` save/load. The 28
+programs in `tests/compile_errors/` must each be rejected with their expected message.
 
-By restricting the language subset, we guarantee absolute memory safety (null checking, bounds checking, ARC) without the overhead of tracking complex C++ memory semantics.
+## Documentation
 
-- **Cyclic References**: The reference counting implementation does not inherently solve cyclic ownership.
-- **Performance**: The VM interprets custom bytecode and prioritizes safety over execution speed.
+- [docs/audit-and-plan.md](docs/audit-and-plan.md) - faults found in the first version and how they were fixed
+- [docs/language-spec.md](docs/language-spec.md) - the accepted language
+- [docs/bytecode-spec.md](docs/bytecode-spec.md) - instruction set and `.jbc` format
+- [docs/safety-model.md](docs/safety-model.md) - how each guarantee is enforced
+- [docs/architecture.md](docs/architecture.md) - compiler and VM structure
+
+## Limitations
+
+This is a teaching-sized compiler, not a replacement for C++. The guarantees above hold only for
+this subset: there are no structs, strings, globals or heap arrays, and `print` takes only an
+`int`. Reference counting cannot collect cycles, but the subset cannot create them because heap
+objects never hold pointers. The VM is a plain interpreter and favours clarity over speed.
