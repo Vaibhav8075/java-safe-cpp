@@ -14,7 +14,8 @@ enum class TokenType {
 
     // Operators
     PLUS, MINUS, STAR, SLASH, PERCENT,
-    ASSIGN, EQ, NEQ, LT, GT, LTE, GTE,
+    ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN, PERCENT_ASSIGN,
+    EQ, NEQ, LT, GT, LTE, GTE,
     AND, OR, NOT, INC, DEC,
 
     // Punctuation

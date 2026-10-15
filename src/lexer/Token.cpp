@@ -27,6 +27,11 @@ std::string Token::typeToString(TokenType type) {
         case TokenType::SLASH: return "SLASH";
         case TokenType::PERCENT: return "PERCENT";
         case TokenType::ASSIGN: return "ASSIGN";
+        case TokenType::PLUS_ASSIGN: return "PLUS_ASSIGN";
+        case TokenType::MINUS_ASSIGN: return "MINUS_ASSIGN";
+        case TokenType::STAR_ASSIGN: return "STAR_ASSIGN";
+        case TokenType::SLASH_ASSIGN: return "SLASH_ASSIGN";
+        case TokenType::PERCENT_ASSIGN: return "PERCENT_ASSIGN";
         case TokenType::EQ: return "EQ";
         case TokenType::NEQ: return "NEQ";
         case TokenType::LT: return "LT";

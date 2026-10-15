@@ -1,7 +1,9 @@
 #include "Lexer.h"
 #include "common/Error.h"
 #include <cctype>
+#include <climits>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace jscpp {
 
@@ -20,6 +22,29 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"false", TokenType::KW_FALSE},
     {"nullptr", TokenType::KW_NULLPTR}
 };
+
+// Keywords of full C++ that this subset deliberately does not support.
+static const std::unordered_set<std::string> excludedFeatures = {
+    "template", "typename", "class", "struct", "union", "public", "private", "protected",
+    "virtual", "namespace", "using", "operator", "friend", "goto", "throw", "try", "catch"
+};
+
+static const std::unordered_set<std::string> excludedTypes = {
+    "char", "float", "double", "long", "short", "unsigned", "signed", "auto", "string"
+};
+
+// <cctype> functions are undefined for negative char values, so always widen to unsigned char first
+static bool isIdentStart(char c) {
+    return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
+}
+
+static bool isIdentChar(char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+}
+
+static bool isDigit(char c) {
+    return std::isdigit(static_cast<unsigned char>(c)) != 0;
+}
 
 Lexer::Lexer(const std::string& source, const std::string& filename)
     : source(source), filename(filename) {}
@@ -74,22 +99,28 @@ SourceLocation Lexer::currentLocation() const {
 void Lexer::skipWhitespaceAndComments() {
     while (!isAtEnd()) {
         char c = peek();
-        if (std::isspace(c)) {
+        if (std::isspace(static_cast<unsigned char>(c))) {
             advance();
         } else if (c == '/' && peekNext() == '/') {
             while (!isAtEnd() && peek() != '\n') {
                 advance();
             }
         } else if (c == '/' && peekNext() == '*') {
+            SourceLocation start = currentLocation();
             advance(); // '/'
             advance(); // '*'
+            bool closed = false;
             while (!isAtEnd()) {
                 if (peek() == '*' && peekNext() == '/') {
                     advance(); // '*'
                     advance(); // '/'
+                    closed = true;
                     break;
                 }
                 advance();
+            }
+            if (!closed) {
+                throw LexerError("Unterminated block comment.", start);
             }
         } else {
             break;
@@ -99,35 +130,33 @@ void Lexer::skipWhitespaceAndComments() {
 
 Token Lexer::nextToken() {
     SourceLocation loc = currentLocation();
+    char first = peek();
+    if (isIdentStart(first)) return identifierOrKeyword();
+    if (isDigit(first)) return number();
+
     char c = advance();
-
-    if (std::isalpha(c) || c == '_') {
-        pos--;
-        if (c == '\n') { line--; column = 1; } else { column--; }
-        return identifierOrKeyword();
-    }
-    if (std::isdigit(c)) {
-        pos--;
-        column--;
-        return number();
-    }
-
     switch (c) {
-        case '+': return match('+') ? Token(TokenType::INC, "++", loc) : Token(TokenType::PLUS, "+", loc);
-        case '-': return match('-') ? Token(TokenType::DEC, "--", loc) : Token(TokenType::MINUS, "-", loc);
-        case '*': return Token(TokenType::STAR, "*", loc);
-        case '/': return Token(TokenType::SLASH, "/", loc);
-        case '%': return Token(TokenType::PERCENT, "%", loc);
+        case '+':
+            if (match('+')) return Token(TokenType::INC, "++", loc);
+            if (match('=')) return Token(TokenType::PLUS_ASSIGN, "+=", loc);
+            return Token(TokenType::PLUS, "+", loc);
+        case '-':
+            if (match('-')) return Token(TokenType::DEC, "--", loc);
+            if (match('=')) return Token(TokenType::MINUS_ASSIGN, "-=", loc);
+            return Token(TokenType::MINUS, "-", loc);
+        case '*': return match('=') ? Token(TokenType::STAR_ASSIGN, "*=", loc) : Token(TokenType::STAR, "*", loc);
+        case '/': return match('=') ? Token(TokenType::SLASH_ASSIGN, "/=", loc) : Token(TokenType::SLASH, "/", loc);
+        case '%': return match('=') ? Token(TokenType::PERCENT_ASSIGN, "%=", loc) : Token(TokenType::PERCENT, "%", loc);
         case '=': return match('=') ? Token(TokenType::EQ, "==", loc) : Token(TokenType::ASSIGN, "=", loc);
         case '!': return match('=') ? Token(TokenType::NEQ, "!=", loc) : Token(TokenType::NOT, "!", loc);
         case '<': return match('=') ? Token(TokenType::LTE, "<=", loc) : Token(TokenType::LT, "<", loc);
         case '>': return match('=') ? Token(TokenType::GTE, ">=", loc) : Token(TokenType::GT, ">", loc);
         case '&':
             if (match('&')) return Token(TokenType::AND, "&&", loc);
-            throw LexerError("Unexpected character '&'", loc);
+            throw LexerError("The address-of operator '&' and references are not supported; use 'new' to create pointers.", loc);
         case '|':
             if (match('|')) return Token(TokenType::OR, "||", loc);
-            throw LexerError("Unexpected character '|'", loc);
+            throw LexerError("Bitwise '|' is not supported; did you mean '||'?", loc);
         case '(': return Token(TokenType::LPAREN, "(", loc);
         case ')': return Token(TokenType::RPAREN, ")", loc);
         case '{': return Token(TokenType::LBRACE, "{", loc);
@@ -137,16 +166,26 @@ Token Lexer::nextToken() {
         case ';': return Token(TokenType::SEMICOLON, ";", loc);
         case ',': return Token(TokenType::COMMA, ",", loc);
         case '#':
-            throw LexerError("Error: Preprocessor macros (like #include or #define) and STL are explicitly excluded in this minimal C++ subset.", loc);
-        default:
+            throw LexerError("Preprocessor directives (#include, #define) and the STL are not part of this C++ subset.", loc);
+        case '"':
+        case '\'':
+            throw LexerError("String and character literals are not supported; only int and bool values exist.", loc);
+        default: {
+            unsigned char u = static_cast<unsigned char>(c);
+            if (u < 32 || u >= 127) {
+                static const char* hex = "0123456789ABCDEF";
+                std::string code = {hex[u >> 4], hex[u & 15]};
+                throw LexerError("Unexpected byte 0x" + code + " (source files must be plain ASCII/UTF-8 text).", loc);
+            }
             throw LexerError(std::string("Unexpected character '") + c + "'", loc);
+        }
     }
 }
 
 Token Lexer::identifierOrKeyword() {
     SourceLocation loc = currentLocation();
     std::string lexeme;
-    while (!isAtEnd() && (std::isalnum(peek()) || peek() == '_')) {
+    while (!isAtEnd() && isIdentChar(peek())) {
         lexeme += advance();
     }
 
@@ -155,10 +194,13 @@ Token Lexer::identifierOrKeyword() {
         return Token(it->second, lexeme, loc);
     }
 
-    // Explicitly reject unsupported C++ features as requested by feedback
-    if (lexeme == "template" || lexeme == "class" || lexeme == "struct" ||
-        lexeme == "public" || lexeme == "private" || lexeme == "virtual") {
-        throw LexerError("Error: This project only supports a minimal subset of C++. Features like templates, classes, and structs are explicitly excluded.", loc);
+    // Reject full-C++ features up front with a clear message instead of a confusing parse error
+    if (excludedFeatures.count(lexeme)) {
+        throw LexerError("'" + lexeme + "' is not supported: templates, classes, structs, namespaces "
+                         "and exceptions are excluded from this C++ subset.", loc);
+    }
+    if (excludedTypes.count(lexeme)) {
+        throw LexerError("Type '" + lexeme + "' is not supported; the subset only has int, bool and void.", loc);
     }
 
     return Token(TokenType::IDENTIFIER, lexeme, loc);
@@ -167,8 +209,15 @@ Token Lexer::identifierOrKeyword() {
 Token Lexer::number() {
     SourceLocation loc = currentLocation();
     std::string lexeme;
-    while (!isAtEnd() && std::isdigit(peek())) {
+    while (!isAtEnd() && isDigit(peek())) {
         lexeme += advance();
+    }
+    if (!isAtEnd() && isIdentStart(peek())) {
+        throw LexerError("Invalid number literal starting with '" + lexeme + "'.", loc);
+    }
+    // Validate here so the parser's std::stoi can never throw out_of_range
+    if (lexeme.size() > 10 || std::stoll(lexeme) > INT_MAX) {
+        throw LexerError("Integer literal " + lexeme + " does not fit in a 32-bit int (max 2147483647).", loc);
     }
     return Token(TokenType::INT_LITERAL, lexeme, loc);
 }
