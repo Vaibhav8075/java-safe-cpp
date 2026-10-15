@@ -7,9 +7,10 @@ namespace jscpp {
 
 struct Instruction {
     Opcode op;
-    int operand; // Integer operand (e.g. index in const table, local offset, jump offset)
+    int operand; // Integer operand (e.g. index in const table, local offset, jump target)
+    int line;    // Source line that produced this instruction, used in runtime error messages
 
-    Instruction(Opcode op, int operand = 0) : op(op), operand(operand) {}
+    Instruction(Opcode op, int operand = 0, int line = 0) : op(op), operand(operand), line(line) {}
 
     std::string toString() const {
         std::string res = opcodeToString(op);
