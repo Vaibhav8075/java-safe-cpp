@@ -14,8 +14,11 @@ public:
 
     void analyze(Program& program);
 
-    // Type checking mapping
+    // Type of every expression, plus the declared type of every VarDeclStmt
     std::unordered_map<ASTNode*, std::shared_ptr<Type>> nodeTypes;
+
+    // Signature of every function (including the built-in print), by name
+    std::unordered_map<std::string, std::shared_ptr<Symbol>> functions;
 
     // Visit methods
     void visit(IntLiteral& node) override;
@@ -44,8 +47,12 @@ private:
     SymbolTable symTable;
     std::shared_ptr<Type> currentReturnType;
 
-    std::shared_ptr<Type> convertTypeAST(const TypeAST& typeAST);
+    std::shared_ptr<Type> convertTypeAST(const TypeAST& typeAST, const SourceLocation& loc);
+    void declareFunction(FunctionDecl& node);
+    std::shared_ptr<Type> typeOf(Expr& expr);
     void checkType(const std::shared_ptr<Type>& expected, const std::shared_ptr<Type>& actual, const SourceLocation& loc);
+    void checkAssignable(Expr& target);
+    static bool alwaysReturns(const Stmt& stmt);
     bool isNumeric(const std::shared_ptr<Type>& type);
     bool isBoolean(const std::shared_ptr<Type>& type);
     bool isPointer(const std::shared_ptr<Type>& type);
