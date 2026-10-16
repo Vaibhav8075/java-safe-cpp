@@ -1,0 +1,161 @@
+// Showcase: uses every feature of the language in one program.
+
+int fib(int n) {
+    if (n < 2) { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+
+int fact(int n) {
+    if (n <= 1) { return 1; }
+    return n * fact(n - 1);
+}
+
+int gcd(int a, int b) {
+    while (b != 0) {
+        int t = a % b;
+        a = b;
+        b = t;
+    }
+    return a;
+}
+
+int power(int base, int exp) {
+    if (exp == 0) { return 1; }
+    return base * power(base, exp - 1);
+}
+
+int sumDigits(int n) {
+    int s = 0;
+    while (n > 0) {
+        s += n % 10;
+        n /= 10;
+    }
+    return s;
+}
+
+int collatzSteps(int n) {
+    int steps = 0;
+    while (n != 1) {
+        if (n % 2 == 0) { n = n / 2; } else { n = 3 * n + 1; }
+        steps++;
+    }
+    return steps;
+}
+
+bool isPrime(int n) {
+    if (n < 2) { return false; }
+    int d = 2;
+    while (d * d <= n) {
+        if (n % d == 0) { return false; }
+        d += 1;
+    }
+    return true;
+}
+
+int* makeCounter(int start) {   // returns an owned pointer
+    int* c = new int;
+    *c = start;
+    return c;
+}
+
+void bump(int* c, int by) {
+    *c += by;
+}
+
+void swap(int* a, int* b) {
+    int t = *a;
+    *a = *b;
+    *b = t;
+}
+
+void main() {
+    // 1. recursion and integer maths
+    print(fib(20));
+    print(fact(10));
+    print(gcd(1071, 462));
+    print(power(2, 20));
+    print(sumDigits(98765));
+    print(collatzSteps(27));
+
+    // 2. loops and bools: count the primes below 60
+    int primes = 0;
+    for (int i = 0; i < 60; i++) {
+        if (isPrime(i)) { primes++; }
+    }
+    print(primes);
+
+    // 3. arrays: fill, bubble sort, sum, binary search
+    int a[10];
+    int seed = 17;
+    for (int i = 0; i < 10; i++) {
+        seed = (seed * 31 + 7) % 101;
+        a[i] = seed;
+    }
+    for (int i = 0; i < 9; i++) {
+        for (int j = 0; j < 9 - i; j++) {
+            if (a[j] > a[j + 1]) {
+                int t = a[j];
+                a[j] = a[j + 1];
+                a[j + 1] = t;
+            }
+        }
+    }
+    int sum = 0;
+    for (int i = 0; i < 10; i++) {
+        print(a[i]);
+        sum += a[i];
+    }
+    print(sum);
+
+    int target = a[6];
+    int lo = 0;
+    int hi = 9;
+    int found = -1;
+    while (lo <= hi && found < 0) {
+        int mid = (lo + hi) / 2;
+        if (a[mid] == target) { found = mid; }
+        else if (a[mid] < target) { lo = mid + 1; }
+        else { hi = mid - 1; }
+    }
+    print(found);
+
+    // 4. a 4x4 table stored in a flat array
+    int grid[16];
+    for (int r = 0; r < 4; r++) {
+        for (int c = 0; c < 4; c++) {
+            grid[r * 4 + c] = (r + 1) * (c + 1);
+        }
+    }
+    int diag = 0;
+    for (int k = 0; k < 4; k++) { diag += grid[k * 4 + k]; }
+    print(diag);
+
+    // 5. pointers, ownership and delete
+    int* counter = makeCounter(100);
+    bump(counter, 5);
+    bump(counter, 7);
+    print(*counter);
+
+    int* x = new int;
+    int* y = new int;
+    *x = 3;
+    *y = 9;
+    swap(x, y);
+    print(*x);
+    print(*y);
+
+    int* alias = counter;
+    delete counter;             // counter becomes nullptr, alias keeps the object alive
+    print(*alias);
+    if (counter == nullptr) { print(1); }
+
+    // 6. short-circuit logic protects a dereference
+    int* none = nullptr;
+    if (none != nullptr && *none > 0) { print(111); } else { print(0); }
+    bool ok = isPrime(97) && !isPrime(91) || false;
+    if (ok) { print(1); } else { print(0); }
+
+    // 7. integers wrap around instead of being undefined behaviour
+    int big = 2147483647;
+    print(big + 1);
+}
