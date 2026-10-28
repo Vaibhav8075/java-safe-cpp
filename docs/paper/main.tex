@@ -285,7 +285,7 @@ earlier functions, so a call stored its arguments in the wrong slots and a progr
 The suite has \res{tests_total} tests. Each of the \res{tests_examples} example programs is run twice, once from
 source and once after saving to and loading from a \texttt{.jbc} file (\res{tests_run} + \res{tests_bytecode}
 tests), and the output, exit status and, for the failing demonstrations, the exception text must match exactly.
-A further \res{tests_rejected} invalid programs must each be rejected with a specific message
+A further \res{tests_rejected_programs} invalid programs must each be rejected with a specific message
 (\res{tests_reject} tests). All \res{tests_total} tests pass on Windows, and all \res{linux_total} pass on Linux.
 We also confirmed that the harness reports a failure when an expected output is deliberately changed.
 

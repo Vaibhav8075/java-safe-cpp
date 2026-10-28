@@ -15,7 +15,7 @@ numbers = (HERE / "generated/numbers.tex").read_text(encoding="utf-8")
 problems = []
 
 for key in sorted(set(re.findall(r"\\res\{([\w]+)\}", tex))):
-    if f"res@{key}" not in numbers:
+    if f"res@{key}\\endcsname" not in numbers:
         problems.append(f"\\res key without a result: {key}")
 
 bib_keys = set(re.findall(r"@\w+\{([^,\s]+),", bib))
