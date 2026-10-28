@@ -1,0 +1,9 @@
+void main() {
+    int scores[3];
+    scores[0] = 90;
+    scores[1] = 85;
+    scores[2] = 70;
+    print(scores[2]);
+    scores[3] = 100;     // one past the end
+    print(1);            // never reached
+}

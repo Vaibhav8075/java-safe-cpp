@@ -1,0 +1,6 @@
+void main() {
+    int* p = new int;
+    *p = 5;
+    delete p;            // p becomes nullptr automatically
+    print(*p);           // would be a dangling pointer in C++
+}

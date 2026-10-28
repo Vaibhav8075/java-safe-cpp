@@ -1,0 +1,6 @@
+int down(int n) {
+    return down(n + 1);
+}
+void main() {
+    print(down(0));
+}
