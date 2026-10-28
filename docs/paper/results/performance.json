@@ -1,0 +1,84 @@
+{
+  "startup_vm": {
+    "median": 0.008519600029103458,
+    "min": 0.00798010005382821,
+    "max": 0.009881499980110675,
+    "reps": 7
+  },
+  "startup_native": {
+    "median": 0.004354899981990457,
+    "min": 0.003891600004862994,
+    "max": 0.05785360001027584,
+    "reps": 7
+  },
+  "fib27": {
+    "vm_release": {
+      "median": 0.02895509998779744,
+      "min": 0.028195400023832917,
+      "max": 0.02958450000733137,
+      "reps": 7
+    },
+    "vm_default": {
+      "median": 0.19799039995996282,
+      "min": 0.1957968000206165,
+      "max": 0.20022170001175255,
+      "reps": 7
+    },
+    "native": {
+      "median": 0.005209999973885715,
+      "min": 0.004439499985892326,
+      "max": 0.0071622999967075884,
+      "reps": 7
+    },
+    "outputs_match": true
+  },
+  "loop3m": {
+    "vm_release": {
+      "median": 0.19698559999233112,
+      "min": 0.19094739999854937,
+      "max": 0.20278099999995902,
+      "reps": 7
+    },
+    "vm_default": {
+      "median": 1.5256970000336878,
+      "min": 1.5204111999482848,
+      "max": 1.540893999976106,
+      "reps": 7
+    },
+    "native": {
+      "median": 0.0060751999844796956,
+      "min": 0.005818000005092472,
+      "max": 0.00839759997325018,
+      "reps": 7
+    },
+    "outputs_match": true
+  },
+  "sort1500": {
+    "vm_release": {
+      "median": 0.1651290999725461,
+      "min": 0.1611026000464335,
+      "max": 0.1749957000138238,
+      "reps": 7
+    },
+    "vm_default": {
+      "median": 1.4211523000267334,
+      "min": 1.392854299978353,
+      "max": 1.478138400008902,
+      "reps": 7
+    },
+    "native": {
+      "median": 0.009678000002168119,
+      "min": 0.008324900001753122,
+      "max": 0.01266009995015338,
+      "reps": 7
+    },
+    "outputs_match": true
+  },
+  "machine": {
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13650HX",
+    "compiler": "g++ (MinGW-W64 x86_64-msvcrt-posix-seh, built by Brecht Sanders, r5) 15.2.0",
+    "os": "Windows 11",
+    "release_flags": "CMAKE_BUILD_TYPE=Release (-O3)",
+    "default_flags": "no optimisation flags (CMAKE_BUILD_TYPE empty)"
+  }
+}

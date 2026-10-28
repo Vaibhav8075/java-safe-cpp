@@ -1,0 +1,127 @@
+{
+  "programs": [
+    {
+      "name": "arrays",
+      "exit": 0,
+      "allocations": 1,
+      "frees": 1,
+      "live_at_exit": 0
+    },
+    {
+      "name": "bounds",
+      "exit": 1,
+      "allocations": 1,
+      "frees": 0,
+      "live_at_exit": 1
+    },
+    {
+      "name": "divide_by_zero",
+      "exit": 1,
+      "allocations": 0,
+      "frees": 0,
+      "live_at_exit": 0
+    },
+    {
+      "name": "hello",
+      "exit": 0,
+      "allocations": 0,
+      "frees": 0,
+      "live_at_exit": 0
+    },
+    {
+      "name": "loops",
+      "exit": 0,
+      "allocations": 0,
+      "frees": 0,
+      "live_at_exit": 0
+    },
+    {
+      "name": "null_pointer",
+      "exit": 1,
+      "allocations": 0,
+      "frees": 0,
+      "live_at_exit": 0
+    },
+    {
+      "name": "overflow",
+      "exit": 0,
+      "allocations": 0,
+      "frees": 0,
+      "live_at_exit": 0
+    },
+    {
+      "name": "ownership",
+      "exit": 0,
+      "allocations": 13,
+      "frees": 13,
+      "live_at_exit": 0
+    },
+    {
+      "name": "pointers",
+      "exit": 0,
+      "allocations": 1,
+      "frees": 1,
+      "live_at_exit": 0
+    },
+    {
+      "name": "primes",
+      "exit": 0,
+      "allocations": 1,
+      "frees": 1,
+      "live_at_exit": 0
+    },
+    {
+      "name": "recursion",
+      "exit": 0,
+      "allocations": 0,
+      "frees": 0,
+      "live_at_exit": 0
+    },
+    {
+      "name": "refcount",
+      "exit": 0,
+      "allocations": 1,
+      "frees": 1,
+      "live_at_exit": 0
+    },
+    {
+      "name": "short_circuit",
+      "exit": 0,
+      "allocations": 1,
+      "frees": 1,
+      "live_at_exit": 0
+    },
+    {
+      "name": "showcase",
+      "exit": 0,
+      "allocations": 5,
+      "frees": 5,
+      "live_at_exit": 0
+    },
+    {
+      "name": "sorting",
+      "exit": 0,
+      "allocations": 1,
+      "frees": 1,
+      "live_at_exit": 0
+    },
+    {
+      "name": "stack_overflow",
+      "exit": 1,
+      "allocations": 0,
+      "frees": 0,
+      "live_at_exit": 0
+    },
+    {
+      "name": "use_after_delete",
+      "exit": 1,
+      "allocations": 1,
+      "frees": 0,
+      "live_at_exit": 1
+    }
+  ],
+  "clean_programs": 12,
+  "clean_leaks": 0,
+  "clean_allocations": 24,
+  "clean_frees": 24
+}

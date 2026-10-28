@@ -1,0 +1,11 @@
+{
+  "lexer": 369,
+  "parser": 982,
+  "semantic": 657,
+  "bytecode": 851,
+  "vm": 563,
+  "common": 49,
+  "main": 167,
+  "total": 3638,
+  "opcodes": 34
+}

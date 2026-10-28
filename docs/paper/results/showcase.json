@@ -1,0 +1,18 @@
+{
+  "source_lines": 161,
+  "functions": 11,
+  "tokens": 979,
+  "ast_nodes": 704,
+  "instructions": 732,
+  "executed": 230016,
+  "check_null": 14,
+  "check_bounds": 14,
+  "inc_ref": 7,
+  "dec_ref": 21,
+  "allocations": 5,
+  "frees": 5,
+  "peak_live": 5,
+  "live_at_exit": 0,
+  "printed_values": 28,
+  "python_match": true
+}

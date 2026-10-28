@@ -1,0 +1,85 @@
+{
+  "demos": [
+    {
+      "name": "1_array_overflow",
+      "exit": 1,
+      "stage": "run",
+      "outcome": "ArrayIndexOutOfBoundsException",
+      "line": 7,
+      "stdout": [
+        "70"
+      ]
+    },
+    {
+      "name": "2_negative_index",
+      "exit": 1,
+      "stage": "run",
+      "outcome": "ArrayIndexOutOfBoundsException",
+      "line": 5,
+      "stdout": []
+    },
+    {
+      "name": "3_null_pointer",
+      "exit": 1,
+      "stage": "run",
+      "outcome": "NullPointerException",
+      "line": 4,
+      "stdout": [
+        "7"
+      ]
+    },
+    {
+      "name": "4_use_after_delete",
+      "exit": 1,
+      "stage": "run",
+      "outcome": "NullPointerException",
+      "line": 5,
+      "stdout": []
+    },
+    {
+      "name": "5_divide_by_zero",
+      "exit": 1,
+      "stage": "run",
+      "outcome": "DivisionByZeroException",
+      "line": 2,
+      "stdout": [
+        "25"
+      ]
+    },
+    {
+      "name": "6_infinite_recursion",
+      "exit": 1,
+      "stage": "run",
+      "outcome": "StackOverflowException",
+      "line": 2,
+      "stdout": []
+    },
+    {
+      "name": "7_int_overflow",
+      "exit": 0,
+      "stage": "run",
+      "outcome": "completes",
+      "line": null,
+      "stdout": [
+        "2147483647",
+        "-2147483648"
+      ]
+    },
+    {
+      "name": "8_address_of",
+      "exit": 1,
+      "stage": "compile",
+      "outcome": "compile error",
+      "line": 3,
+      "stdout": []
+    },
+    {
+      "name": "9_missing_return",
+      "exit": 1,
+      "stage": "compile",
+      "outcome": "compile error",
+      "line": 1,
+      "stdout": []
+    }
+  ]
+}

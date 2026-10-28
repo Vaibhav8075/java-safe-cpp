@@ -1,0 +1,15 @@
+void main() {
+    int a[1500];
+    int seed = 12345;
+    for (int i = 0; i < 1500; i++) {
+        seed = (seed * 1103 + 12345) % 100003;
+        a[i] = seed;
+    }
+    for (int i = 0; i < 1499; i++) {
+        for (int j = 0; j < 1499 - i; j++) {
+            if (a[j] > a[j + 1]) { int t = a[j]; a[j] = a[j + 1]; a[j + 1] = t; }
+        }
+    }
+    print(a[0]);
+    print(a[1499]);
+}

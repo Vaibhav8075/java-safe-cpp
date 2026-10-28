@@ -1,0 +1,9 @@
+{
+  "total": 62,
+  "failed": 0,
+  "run": 17,
+  "bytecode": 17,
+  "reject": 28,
+  "examples": 17,
+  "rejected_programs": 28
+}
