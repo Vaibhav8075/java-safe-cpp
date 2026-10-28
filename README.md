@@ -85,7 +85,7 @@ Requirements: a C++17 compiler and CMake 3.15+.
 ```bash
 cmake -S . -B build
 cmake --build build
-ctest --test-dir build        # 60 tests
+ctest --test-dir build        # 62 tests
 ```
 
 ## Usage
@@ -116,6 +116,15 @@ programs in `tests/compile_errors/` must each be rejected with their expected me
 - [docs/bytecode-spec.md](docs/bytecode-spec.md) - instruction set and `.jbc` format
 - [docs/safety-model.md](docs/safety-model.md) - how each guarantee is enforced
 - [docs/architecture.md](docs/architecture.md) - compiler and VM structure
+- [docs/paper/](docs/paper/) - IEEE-format paper; every number in it is produced by `collect_results.py` from the
+  real compiler (see `docs/paper/build.sh`)
+
+## Demos
+
+- `demo/safety/` has nine tiny programs, one per safety guarantee. Run them all with
+  `demo/run_safety_demo.sh build/jscpp` (Linux/WSL/Git Bash) or `demo\run_safety_demo.bat` (Windows).
+- `examples/showcase.cppsafe` is a 160-line program that uses every feature; try
+  `jscpp run examples/showcase.cppsafe --stats`.
 
 ## Limitations
 
