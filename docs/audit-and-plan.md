@@ -63,7 +63,7 @@ Work was ordered so each step could be checked on its own.
 
 All ten steps are done. Results from the final build:
 
-- `ctest --test-dir build`: **60/60 passed** on Windows (MinGW g++ 15.2) and on Ubuntu under WSL
+- `ctest --test-dir build`: **62/62 passed** on Windows (MinGW g++ 15.2) and on Ubuntu under WSL
   (g++ 15.2).
 - Build is warning-free with `-Wall -Wextra -Wpedantic`.
 - A `.jbc` file compiled on Windows runs on Linux with identical output.
