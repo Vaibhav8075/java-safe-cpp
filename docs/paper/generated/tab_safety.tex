@@ -1,0 +1,15 @@
+\begin{tabular}{p{5.6cm}lp{5.6cm}r}
+\toprule
+Unsafe action & Stage & Result & Line \\
+\midrule
+Store one past the end of an array & run & \texttt{ArrayIndexOutOfBoundsException} & 7 \\
+Read an array at index $-1$ & run & \texttt{ArrayIndexOutOfBoundsException} & 5 \\
+Dereference \texttt{nullptr} & run & \texttt{NullPointerException} & 4 \\
+Use a pointer after \texttt{delete} & run & \texttt{NullPointerException} & 5 \\
+Divide by zero & run & \texttt{DivisionByZeroException} & 2 \\
+Recurse without a base case & run & \texttt{StackOverflowException} & 2 \\
+Add one to the largest \texttt{int} & run & completes, prints $-2147483648$ & -- \\
+Take an address with \texttt{\&} & compile & rejected: compile error & 3 \\
+Non-void function that can end without \texttt{return} & compile & rejected: compile error & 1 \\
+\bottomrule
+\end{tabular}
